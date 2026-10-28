@@ -1,25 +1,146 @@
 import { useState, useEffect } from "react";
 import api from "../services/api";
 import { useParams, useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  Home,
+  Dumbbell,
+  ClipboardList,
+  Plus,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  Type,
+  AlignLeft,
+  Repeat,
+  Timer,
+  StickyNote,
+  ListChecks,
+  CalendarDays,
+} from "lucide-react";
+
+const inputClass =
+  "w-full rounded-2xl bg-neutral-100 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+const smallInputClass =
+  "w-full rounded-xl bg-neutral-100 px-3 py-2 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+const editInputClass =
+  "w-full rounded-xl bg-white px-3 py-2 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+const iconClass = "absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400";
+const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600";
+
+const DAYS = [
+  { key: "seg", label: "Seg", full: "Segunda-feira" },
+  { key: "ter", label: "Ter", full: "Terça-feira" },
+  { key: "qua", label: "Qua", full: "Quarta-feira" },
+  { key: "qui", label: "Qui", full: "Quinta-feira" },
+  { key: "sex", label: "Sex", full: "Sexta-feira" },
+  { key: "sab", label: "Sáb", full: "Sábado" },
+  { key: "dom", label: "Dom", full: "Domingo" },
+];
+
+const isKnownDay = (key) => DAYS.some((d) => d.key === key);
+const dayFull = (key) => DAYS.find((d) => d.key === key)?.full || "Sem dia definido";
+
+// Agrupa exercícios por dia, mantendo o índice original (necessário para remover/editar)
+const groupByDay = (exs = []) => {
+  const withIdx = exs.map((ex, idx) => ({ ex, idx }));
+  const groups = DAYS.map((d) => ({
+    key: d.key,
+    items: withIdx.filter((i) => i.ex.day === d.key),
+  })).filter((g) => g.items.length > 0);
+
+  // Exercícios antigos (sem dia) ficam num grupo à parte
+  const orphans = withIdx.filter((i) => !isKnownDay(i.ex.day));
+  if (orphans.length > 0) groups.push({ key: "", items: orphans });
+  return groups;
+};
+
+const countByDay = (exs = []) => {
+  const counts = {};
+  exs.forEach((ex) => {
+    const k = isKnownDay(ex.day) ? ex.day : "";
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  return counts;
+};
+
+function DayPills({ value, onChange, counts = {}, showNone = false }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {DAYS.map((d) => {
+        const active = value === d.key;
+        const n = counts[d.key] || 0;
+        return (
+          <button
+            key={d.key}
+            type="button"
+            onClick={() => onChange(d.key)}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
+              active
+                ? "bg-[#7c6cf0] text-white"
+                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+            }`}
+          >
+            {d.label}
+            {n > 0 && (
+              <span
+                className={`rounded-full px-1.5 text-xs ${
+                  active ? "bg-white/25 text-white" : "bg-[#e9e6ff] text-[#5b4de0]"
+                }`}
+              >
+                {n}
+              </span>
+            )}
+          </button>
+        );
+      })}
+      {showNone && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+            value === ""
+              ? "bg-neutral-900 text-white"
+              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+          }`}
+        >
+          Sem dia ({counts[""] || 0})
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function Workouts() {
   const { studentId } = useParams();
   const navigate = useNavigate();
 
   const [workouts, setWorkouts] = useState([]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-
-  // Lista temporária de exercícios para adicionar na ficha
   const [exercises, setExercises] = useState([]);
+
+  // Dia selecionado na montagem da ficha
+  const [selectedDay, setSelectedDay] = useState("seg");
+
   const [exName, setExName] = useState("");
   const [exSets, setExSets] = useState("");
   const [exReps, setExReps] = useState("");
   const [exRest, setExRest] = useState("");
   const [exNotes, setExNotes] = useState("");
 
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editExercises, setEditExercises] = useState([]);
+  const [editDay, setEditDay] = useState("seg");
+
   useEffect(() => {
-    loadWorkouts();
+    if (studentId) {
+      loadWorkouts();
+    }
   }, [studentId]);
 
   const loadWorkouts = async () => {
@@ -41,15 +162,19 @@ export default function Workouts() {
       reps: exReps,
       rest_time: exRest,
       notes: exNotes,
+      day: selectedDay,
     };
 
     setExercises([...exercises, newEx]);
-    // Limpar campos do exercício
     setExName("");
     setExSets("");
     setExReps("");
     setExRest("");
     setExNotes("");
+  };
+
+  const handleRemoveTempExercise = (idx) => {
+    setExercises(exercises.filter((_, i) => i !== idx));
   };
 
   const handleCreateWorkout = async (e) => {
@@ -63,13 +188,14 @@ export default function Workouts() {
       await api.post("/workouts", {
         title,
         description,
-        student_id: studentId,
+        student_id: String(studentId),
         exercises,
       });
 
       setTitle("");
       setDescription("");
       setExercises([]);
+      setSelectedDay("seg");
       loadWorkouts();
       alert("Ficha de treino criada com sucesso!");
     } catch (err) {
@@ -78,131 +204,544 @@ export default function Workouts() {
     }
   };
 
+  const handleStartEdit = (workout) => {
+    const exs = workout.exercises || [];
+    setEditingId(workout.id);
+    setEditTitle(workout.title || "");
+    setEditDescription(workout.description || "");
+    setEditExercises(exs);
+
+    // Abre no primeiro dia que tem exercício (ou segunda por padrão)
+    const firstGroup = groupByDay(exs)[0];
+    setEditDay(firstGroup ? firstGroup.key : "seg");
+  };
+
+  const handleSaveEdit = async (workoutId) => {
+    try {
+      // Remove linhas em branco e normaliza as séries
+      const cleaned = editExercises
+        .filter((ex) => ex.name && String(ex.name).trim() !== "")
+        .map((ex) => ({ ...ex, sets: parseInt(ex.sets) || 0 }));
+
+      await api.put(`/workouts/${workoutId}`, {
+        title: editTitle,
+        description: editDescription,
+        student_id: String(studentId),
+        exercises: cleaned,
+      });
+
+      setEditingId(null);
+      loadWorkouts();
+      alert("Ficha atualizada com sucesso!");
+    } catch (err) {
+      console.error("Erro ao atualizar ficha:", err);
+      alert("Erro ao atualizar ficha.");
+    }
+  };
+
+  const handleDeleteWorkout = async (workoutId) => {
+    if (!window.confirm("Tem certeza que deseja excluir esta ficha de treino?")) return;
+
+    try {
+      await api.delete(`/workouts/${workoutId}`);
+      loadWorkouts();
+      alert("Ficha excluída com sucesso!");
+    } catch (err) {
+      console.error("Erro ao excluir ficha:", err);
+      alert("Erro ao excluir a ficha de treino.");
+    }
+  };
+
+  // Atualiza um campo de um exercício na edição (sem mutar o estado original)
+  const updateEditExercise = (idx, field, value) => {
+    setEditExercises(editExercises.map((ex, i) => (i === idx ? { ...ex, [field]: value } : ex)));
+  };
+
+  const addEditExercise = () => {
+    const day = editDay || "seg";
+    setEditExercises([
+      ...editExercises,
+      { name: "", sets: "", reps: "", rest_time: "", notes: "", day },
+    ]);
+    setEditDay(day);
+  };
+
+  const tempGroups = groupByDay(exercises);
+  const tempCounts = countByDay(exercises);
+  const daysUsed = tempGroups.length;
+
   return (
-    <div style={styles.container}>
-      <h2>Gestão de Treinos do Aluno</h2>
-      <button onClick={() => navigate("/students")} style={styles.backButton}>
-        Voltar aos Alunos
-      </button>
-
-      {/* Formulário para Criar Ficha */}
-      <form onSubmit={handleCreateWorkout} style={styles.form}>
-        <h3>Nova Ficha de Treino</h3>
-        <input
-          type="text"
-          placeholder="Título (Ex: Treino A - Hipertrofia)"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          style={styles.input}
-        />
-        <input
-          type="text"
-          placeholder="Descrição (Ex: Foco em Membros Superiores)"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          style={styles.input}
-        />
-
-        <div style={styles.exerciseBox}>
-          <h4>Adicionar Exercício à Ficha</h4>
-          <input
-            type="text"
-            placeholder="Nome do Exercício (Ex: Supino Reto)"
-            value={exName}
-            onChange={(e) => setExName(e.target.value)}
-            style={styles.input}
-          />
-          <div style={styles.row}>
-            <input
-              type="number"
-              placeholder="Séries (Ex: 4)"
-              value={exSets}
-              onChange={(e) => setExSets(e.target.value)}
-              style={styles.input}
-            />
-            <input
-              type="text"
-              placeholder="Repetições (Ex: 10-12)"
-              value={exReps}
-              onChange={(e) => setExReps(e.target.value)}
-              style={styles.input}
-            />
-          </div>
-          <div style={styles.row}>
-            <input
-              type="text"
-              placeholder="Descanso (Ex: 60s)"
-              value={exRest}
-              onChange={(e) => setExRest(e.target.value)}
-              style={styles.input}
-            />
-            <input
-              type="text"
-              placeholder="Notas (Ex: Carga progressiva)"
-              value={exNotes}
-              onChange={(e) => setExNotes(e.target.value)}
-              style={styles.input}
-            />
-          </div>
-          <button type="button" onClick={handleAddExerciseToState} style={styles.subButton}>
-            + Adicionar Exercício à Lista
+    <div className="min-h-screen bg-[#ececec] p-4 font-sans text-neutral-900 md:p-8">
+      <div className="mx-auto max-w-6xl">
+        {/* Barra superior */}
+        <div className="mb-6 flex gap-2">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md"
+          >
+            <ArrowLeft size={16} /> Voltar
+          </button>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-700"
+          >
+            <Home size={16} /> Início
           </button>
         </div>
 
-        {/* Lista temporária dos exercícios adicionados */}
-        {exercises.length > 0 && (
-          <div style={styles.tempList}>
-            <p><strong>Exercícios na Ficha ({exercises.length}):</strong></p>
-            <ul>
-              {exercises.map((ex, idx) => (
-                <li key={idx}>
-                  {ex.name} - {ex.sets}x{ex.reps} (Descanso: {ex.rest_time || "N/A"})
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold tracking-tight">Gestão de treinos</h1>
+          <p className="text-sm text-neutral-500">Monte as fichas do aluno separadas por dia da semana</p>
+        </div>
 
-        <button type="submit" style={styles.button}>Salvar Ficha Completa</button>
-      </form>
-
-      {/* Listar Fichas Existentes */}
-      <div style={styles.listContainer}>
-        <h3>Fichas Cadastradas</h3>
-        {workouts.length === 0 ? (
-          <p>Nenhuma ficha de treino cadastrada para este aluno.</p>
-        ) : (
-          workouts.map((w) => (
-            <div key={w.id} style={styles.card}>
-              <h4>{w.title}</h4>
-              <p>{w.description}</p>
-              <ul>
-                {w.exercises?.map((ex) => (
-                  <li key={ex.id}>
-                    <strong>{ex.name}</strong>: {ex.sets} séries x {ex.reps} reps | Descanso: {ex.rest_time || "-"}
-                    {ex.notes && <span style={{display: "block", fontSize: "12px", color: "#aaa"}}>Obs: {ex.notes}</span>}
-                  </li>
-                ))}
-              </ul>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
+          {/* Fichas cadastradas (card escuro) */}
+          <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 p-6 text-white shadow-sm md:col-span-2">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
+              <Dumbbell size={20} />
             </div>
-          ))
-        )}
+            <div>
+              <p className="text-6xl font-semibold leading-none">
+                {workouts.length}
+                <span className="ml-2 text-xl font-normal text-neutral-400">fichas</span>
+              </p>
+              <p className="mt-2 text-sm text-neutral-400">Cadastradas para este aluno</p>
+            </div>
+          </div>
+
+          {/* Exercícios na ficha atual (card laranja) */}
+          <div className="flex flex-col justify-between rounded-3xl bg-[#ff4d00] p-6 text-white shadow-sm md:col-span-2">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20">
+              <ListChecks size={20} />
+            </div>
+            <div>
+              <p className="text-6xl font-semibold leading-none">
+                {exercises.length}
+                <span className="ml-2 text-xl font-normal text-white/80">exercícios</span>
+              </p>
+              <p className="mt-2 text-sm text-white/80">
+                Na ficha que você está montando · {daysUsed} {daysUsed === 1 ? "dia" : "dias"}
+              </p>
+            </div>
+          </div>
+
+          {/* Montagem da ficha */}
+          <form
+            onSubmit={handleCreateWorkout}
+            className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4"
+          >
+            <div className="mb-5 flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e9e6ff]">
+                <ClipboardList size={20} className="text-[#5b4de0]" />
+              </span>
+              <h3 className="text-xl font-semibold leading-tight">
+                Nova ficha de treino
+                <span className="block text-sm font-normal text-neutral-400">
+                  Escolha o dia e adicione quantos exercícios quiser
+                </span>
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {/* Coluna esquerda: dados + exercício */}
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className={labelClass}>Título</label>
+                  <div className="relative">
+                    <Type size={18} className={iconClass} />
+                    <input
+                      type="text"
+                      placeholder="Ex: Treino ABC - Hipertrofia"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      required
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Descrição</label>
+                  <div className="relative">
+                    <AlignLeft size={18} className={iconClass} />
+                    <input
+                      type="text"
+                      placeholder="Ex: Foco em membros superiores"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={`${labelClass} flex items-center gap-2`}>
+                    <CalendarDays size={15} /> Dia da semana
+                  </label>
+                  <DayPills value={selectedDay} onChange={setSelectedDay} counts={tempCounts} />
+                </div>
+
+                {/* Caixa de exercício */}
+                <div className="rounded-2xl border-2 border-dashed border-neutral-200 p-4">
+                  <h4 className="mb-3 flex items-center gap-2 text-base font-semibold">
+                    <Dumbbell size={16} className="text-[#5b4de0]" />
+                    Adicionar exercício · {dayFull(selectedDay)}
+                  </h4>
+
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      placeholder="Nome do exercício (Ex: Supino reto)"
+                      value={exName}
+                      onChange={(e) => setExName(e.target.value)}
+                      className={smallInputClass}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="relative">
+                        <Repeat size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="number"
+                          placeholder="Séries"
+                          value={exSets}
+                          onChange={(e) => setExSets(e.target.value)}
+                          className={`${smallInputClass} pl-9`}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Repetições (Ex: 10-12)"
+                        value={exReps}
+                        onChange={(e) => setExReps(e.target.value)}
+                        className={smallInputClass}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="relative">
+                        <Timer size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="text"
+                          placeholder="Descanso (Ex: 60s)"
+                          value={exRest}
+                          onChange={(e) => setExRest(e.target.value)}
+                          className={`${smallInputClass} pl-9`}
+                        />
+                      </div>
+                      <div className="relative">
+                        <StickyNote size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="text"
+                          placeholder="Notas"
+                          value={exNotes}
+                          onChange={(e) => setExNotes(e.target.value)}
+                          className={`${smallInputClass} pl-9`}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddExerciseToState}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-700"
+                    >
+                      <Plus size={16} /> Adicionar em {dayFull(selectedDay)}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Coluna direita: resumo da ficha por dia */}
+              <div className="rounded-2xl bg-neutral-50 p-4 ring-1 ring-neutral-200/70">
+                <p className="mb-3 text-sm font-semibold">
+                  Resumo da ficha{" "}
+                  <span className="font-normal text-neutral-400">
+                    ({exercises.length} {exercises.length === 1 ? "exercício" : "exercícios"})
+                  </span>
+                </p>
+
+                {tempGroups.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-neutral-400">
+                    Escolha um dia e adicione exercícios.
+                    <br />
+                    Eles vão aparecer aqui, separados por dia.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {tempGroups.map((g) => (
+                      <div key={g.key || "none"}>
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-semibold text-[#5b4de0]">
+                            {dayFull(g.key)}
+                          </span>
+                          <span className="text-xs text-neutral-400">{g.items.length}</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {g.items.map(({ ex, idx }) => (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-sm"
+                            >
+                              <div className="min-w-0">
+                                <strong className="block truncate font-medium">{ex.name}</strong>
+                                <span className="text-xs text-neutral-400">
+                                  {ex.sets}x{ex.reps}
+                                  {ex.rest_time ? ` · descanso ${ex.rest_time}` : ""}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveTempExercise(idx)}
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+                                aria-label="Remover exercício"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="mt-6 w-full rounded-2xl bg-[#7c6cf0] px-5 py-3.5 text-base font-semibold text-white transition hover:bg-[#6a59e6]"
+            >
+              Salvar nova ficha
+            </button>
+          </form>
+
+          {/* Lista de fichas */}
+          <h3 className="mt-2 text-xl font-semibold md:col-span-4">Fichas cadastradas</h3>
+
+          {workouts.length === 0 ? (
+            <div className="rounded-3xl bg-white p-8 text-center text-sm text-neutral-400 shadow-sm md:col-span-4">
+              Nenhuma ficha de treino cadastrada para este aluno.
+            </div>
+          ) : (
+            workouts.map((w) => {
+              const isEditing = editingId === w.id;
+              const groups = groupByDay(w.exercises || []);
+
+              // Dados da edição
+              const editCounts = countByDay(editExercises);
+              const hasOrphans = (editCounts[""] || 0) > 0;
+              const visibleEdit = editExercises
+                .map((ex, idx) => ({ ex, idx }))
+                .filter(({ ex }) => (editDay === "" ? !isKnownDay(ex.day) : ex.day === editDay));
+
+              return (
+                <div
+                  key={w.id}
+                  className={`rounded-3xl bg-white p-6 shadow-sm ${
+                    isEditing ? "md:col-span-4" : "md:col-span-2"
+                  }`}
+                >
+                  {isEditing ? (
+                    <div className="flex flex-col gap-4">
+                      <h4 className="text-lg font-semibold">Editando ficha</h4>
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className={labelClass}>Título</label>
+                          <div className="relative">
+                            <Type size={18} className={iconClass} />
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              placeholder="Título do treino"
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Descrição</label>
+                          <div className="relative">
+                            <AlignLeft size={18} className={iconClass} />
+                            <input
+                              type="text"
+                              value={editDescription}
+                              onChange={(e) => setEditDescription(e.target.value)}
+                              placeholder="Descrição"
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={`${labelClass} flex items-center gap-2`}>
+                          <CalendarDays size={15} /> Dia da semana
+                        </label>
+                        <DayPills
+                          value={editDay}
+                          onChange={setEditDay}
+                          counts={editCounts}
+                          showNone={hasOrphans}
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                        {visibleEdit.length === 0 && (
+                          <p className="rounded-2xl bg-neutral-100 py-6 text-center text-sm text-neutral-400">
+                            Nenhum exercício em {dayFull(editDay)}.
+                          </p>
+                        )}
+
+                        {visibleEdit.map(({ ex, idx }) => (
+                          <div key={idx} className="flex flex-col gap-2 rounded-2xl bg-neutral-100 p-3">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={ex.name}
+                                onChange={(e) => updateEditExercise(idx, "name", e.target.value)}
+                                className={editInputClass}
+                                placeholder="Exercício"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditExercises(editExercises.filter((_, i) => i !== idx))
+                                }
+                                className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 transition hover:bg-red-100"
+                                aria-label="Remover exercício"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                              <input
+                                type="number"
+                                value={ex.sets}
+                                onChange={(e) =>
+                                  updateEditExercise(idx, "sets", parseInt(e.target.value) || 0)
+                                }
+                                className={editInputClass}
+                                placeholder="Séries"
+                              />
+                              <input
+                                type="text"
+                                value={ex.reps}
+                                onChange={(e) => updateEditExercise(idx, "reps", e.target.value)}
+                                className={editInputClass}
+                                placeholder="Repetições"
+                              />
+                              <input
+                                type="text"
+                                value={ex.rest_time || ""}
+                                onChange={(e) => updateEditExercise(idx, "rest_time", e.target.value)}
+                                className={editInputClass}
+                                placeholder="Descanso"
+                              />
+                              <select
+                                value={isKnownDay(ex.day) ? ex.day : ""}
+                                onChange={(e) => updateEditExercise(idx, "day", e.target.value)}
+                                className={editInputClass}
+                              >
+                                {!isKnownDay(ex.day) && <option value="">Sem dia</option>}
+                                {DAYS.map((d) => (
+                                  <option key={d.key} value={d.key}>
+                                    {d.full}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={addEditExercise}
+                          className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-200 py-3 text-sm font-semibold text-neutral-600 transition hover:border-[#7c6cf0] hover:text-[#5b4de0]"
+                        >
+                          <Plus size={16} /> Adicionar exercício em {dayFull(editDay || "seg")}
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveEdit(w.id)}
+                          className="flex items-center gap-2 rounded-2xl bg-[#7c6cf0] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
+                        >
+                          <Check size={16} /> Salvar alterações
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="flex items-center gap-2 rounded-2xl bg-neutral-100 px-5 py-2.5 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+                        >
+                          <X size={16} /> Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff]">
+                            <Dumbbell size={18} className="text-[#5b4de0]" />
+                          </span>
+                          <div>
+                            <h4 className="text-lg font-semibold leading-tight">{w.title}</h4>
+                            {w.description && (
+                              <p className="text-sm text-neutral-500">{w.description}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleStartEdit(w)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] text-amber-700 transition hover:bg-amber-200"
+                            aria-label="Editar ficha"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteWorkout(w.id)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+                            aria-label="Excluir ficha"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-4">
+                        {groups.map((g) => (
+                          <div key={g.key || "none"}>
+                            <span className="mb-2 inline-block rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-semibold text-[#5b4de0]">
+                              {dayFull(g.key)}
+                            </span>
+                            <div className="flex flex-col gap-2">
+                              {g.items.map(({ ex, idx }) => (
+                                <div key={idx} className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <strong className="font-medium">{ex.name}</strong>
+                                    <span className="shrink-0 text-neutral-500">
+                                      {ex.sets}x{ex.reps}
+                                      <span className="ml-2 text-xs text-neutral-400">
+                                        descanso {ex.rest_time || "-"}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  {ex.notes && (
+                                    <p className="mt-1 text-xs text-neutral-400">Obs: {ex.notes}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
 }
-
-const styles = {
-  container: { padding: "30px", backgroundColor: "#121212", color: "#fff", minHeight: "100vh" },
-  form: { backgroundColor: "#1e1e1e", padding: "20px", borderRadius: "8px", marginBottom: "30px", display: "flex", flexDirection: "column", gap: "10px", maxWidth: "500px" },
-  input: { padding: "10px", borderRadius: "4px", border: "1px solid #333", backgroundColor: "#2a2a2a", color: "#fff", width: "100%" },
-  row: { display: "flex", gap: "10px" },
-  button: { padding: "12px", backgroundColor: "#28a745", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer", fontWeight: "bold", marginTop: "10px" },
-  subButton: { padding: "8px", backgroundColor: "#007bff", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" },
-  backButton: { padding: "8px 16px", backgroundColor: "#6c757d", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer", marginBottom: "20px" },
-  exerciseBox: { border: "1px dashed #444", padding: "15px", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "10px", backgroundColor: "#181818" },
-  tempList: { backgroundColor: "#252525", padding: "10px", borderRadius: "4px", fontSize: "14px" },
-  listContainer: { display: "flex", flexDirection: "column", gap: "15px", maxWidth: "500px" },
-  card: { backgroundColor: "#1e1e1e", padding: "15px", borderRadius: "8px", border: "1px solid #333" }
-};

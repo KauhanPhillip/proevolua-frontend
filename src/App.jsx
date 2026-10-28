@@ -1,22 +1,23 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./Pages/Login";
-import Register from "./Pages/Register";
+import Register from "./Pages/Register"; // <--- 1. Importe a tela de cadastro aqui
 import Dashboard from "./Pages/Dashboard";
 import Students from "./Pages/Students";
-import Workouts from "./Pages/Workouts"; // Importa a página de treinos
+import StudentProfile from "./Pages/StudentProfile";
+import Workouts from "./Pages/Workouts";
 
-function App() {
+export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/auth/login" element={<Login />} />
+        <Route path="/register" element={<Register />} /> {/* <--- 2. Adicione a rota aqui */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/students" element={<Students />} />
-        <Route path="/students/:studentId/workouts" element={<Workouts />} /> {/* Rota dinâmica de treinos */}
+        <Route path="/students/:studentId/profile" element={<StudentProfile />} />
+        <Route path="/workouts/:studentId" element={<Workouts />} />
       </Routes>
     </BrowserRouter>
   );
 }
-
-export default App;
