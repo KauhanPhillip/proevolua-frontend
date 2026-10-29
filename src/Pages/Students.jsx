@@ -17,7 +17,11 @@ import {
   Check,
   X,
   Clock,
+  Phone,
+  Ruler,
+  Download,
 } from "lucide-react";
+import { generateWorkoutPdf, generateAssessmentPdf } from "../utils/pdfReports";
 
 const inputClass =
   "w-full rounded-2xl bg-neutral-100 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
@@ -35,6 +39,18 @@ const DAYS_NAMES = {
   dom: "Domingo",
 };
 
+// Baixa um arquivo gerado no navegador
+const downloadFile = (file) => {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+
 export default function Students() {
   const navigate = useNavigate();
   const professorId = localStorage.getItem("professor_id") || 5;
@@ -44,12 +60,14 @@ export default function Students() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [age, setAge] = useState("");
   const [goal, setGoal] = useState("");
 
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
   const [editAge, setEditAge] = useState("");
   const [editGoal, setEditGoal] = useState("");
 
@@ -90,6 +108,7 @@ export default function Students() {
       await api.post("/students", {
         name,
         email: email || null,
+        phone: phone || null,
         age: age ? parseInt(age) : null,
         goal: goal || null,
         professor_id: parseInt(professorId),
@@ -97,6 +116,7 @@ export default function Students() {
 
       setName("");
       setEmail("");
+      setPhone("");
       setAge("");
       setGoal("");
       loadStudents();
@@ -111,6 +131,7 @@ export default function Students() {
     setEditingId(student.id);
     setEditName(student.name || "");
     setEditEmail(student.email || "");
+    setEditPhone(student.phone || "");
     setEditAge(student.age || "");
     setEditGoal(student.goal || "");
   };
@@ -120,6 +141,7 @@ export default function Students() {
       await api.put(`/students/${studentId}`, {
         name: editName,
         email: editEmail || null,
+        phone: editPhone || null,
         age: editAge ? parseInt(editAge) : null,
         goal: editGoal || null,
         professor_id: parseInt(professorId),
@@ -144,6 +166,40 @@ export default function Students() {
     } catch (err) {
       console.error("Erro ao excluir aluno:", err);
       alert("Erro ao excluir o aluno.");
+    }
+  };
+
+  // ---------- Exportar PDFs ----------
+
+  const handleExportWorkouts = (student) => {
+    const workouts = studentWorkouts[student.id] || [];
+    if (workouts.length === 0) {
+      alert("Este aluno ainda não tem ficha de treino cadastrada.");
+      return;
+    }
+
+    try {
+      downloadFile(generateWorkoutPdf(student, workouts));
+    } catch (err) {
+      console.error("Erro ao gerar PDF do treino:", err);
+      alert("Erro ao gerar o PDF do treino.");
+    }
+  };
+
+  const handleExportAssessment = async (student) => {
+    try {
+      const res = await api.get(`/students/${student.id}/assessments`);
+      const assessments = res.data || [];
+
+      if (assessments.length === 0) {
+        alert("Este aluno ainda não tem avaliação física cadastrada.");
+        return;
+      }
+
+      downloadFile(generateAssessmentPdf(student, assessments));
+    } catch (err) {
+      console.error("Erro ao gerar PDF das medidas:", err);
+      alert("Erro ao gerar o PDF das medidas.");
     }
   };
 
@@ -232,17 +288,32 @@ export default function Students() {
                 </div>
               </div>
 
-              <div>
-                <label className={labelClass}>E-mail (opcional)</label>
-                <div className="relative">
-                  <Mail size={18} className={iconClass} />
-                  <input
-                    type="email"
-                    placeholder="aluno@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className={inputClass}
-                  />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>E-mail (opcional)</label>
+                  <div className="relative">
+                    <Mail size={18} className={iconClass} />
+                    <input
+                      type="email"
+                      placeholder="aluno@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Telefone (opcional)</label>
+                  <div className="relative">
+                    <Phone size={18} className={iconClass} />
+                    <input
+                      type="tel"
+                      placeholder="(35) 99999-9999"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -328,12 +399,7 @@ export default function Students() {
               const exercisesByDay = groupExercisesByDay(workouts);
 
               return (
-                <div
-                  key={s.id}
-                  className={`rounded-3xl bg-white p-6 shadow-sm ${
-                    isEditing ? "md:col-span-4" : "md:col-span-4"
-                  }`}
-                >
+                <div key={s.id} className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4">
                   {isEditing ? (
                     <div className="flex flex-col gap-4">
                       <h4 className="text-lg font-semibold">Editando aluno</h4>
@@ -366,6 +432,19 @@ export default function Students() {
                           </div>
                         </div>
                         <div>
+                          <label className={labelClass}>Telefone</label>
+                          <div className="relative">
+                            <Phone size={18} className={iconClass} />
+                            <input
+                              type="tel"
+                              value={editPhone}
+                              onChange={(e) => setEditPhone(e.target.value)}
+                              placeholder="(35) 99999-9999"
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                        <div>
                           <label className={labelClass}>Idade</label>
                           <div className="relative">
                             <Calendar size={18} className={iconClass} />
@@ -378,7 +457,7 @@ export default function Students() {
                             />
                           </div>
                         </div>
-                        <div>
+                        <div className="sm:col-span-2">
                           <label className={labelClass}>Objetivo</label>
                           <div className="relative">
                             <Target size={18} className={iconClass} />
@@ -410,7 +489,7 @@ export default function Students() {
                     </div>
                   ) : (
                     <>
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-100 pb-5">
+                      <div className="flex flex-col justify-between gap-4 border-b border-neutral-100 pb-5 md:flex-row md:items-center">
                         <div className="flex items-start gap-4">
                           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff] text-lg font-semibold text-[#5b4de0]">
                             {initials(s.name)}
@@ -425,6 +504,9 @@ export default function Students() {
                             <div className="mt-3 flex flex-wrap gap-2 text-xs">
                               <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
                                 <Mail size={12} /> {s.email || "Não informado"}
+                              </span>
+                              <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
+                                <Phone size={12} /> {s.phone || "Sem telefone"}
                               </span>
                               <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
                                 <Calendar size={12} /> {s.age || "-"} anos
@@ -447,7 +529,7 @@ export default function Students() {
                             onClick={() => navigate(`/workouts/${s.id}`)}
                             className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
                           >
-                            <Dumbbell size={15} /> Gerenciar Treinos
+                            <Dumbbell size={15} /> Gerenciar treinos
                           </button>
                           <button
                             onClick={() => handleStartEdit(s)}
@@ -466,34 +548,65 @@ export default function Students() {
                         </div>
                       </div>
 
+                      {/* Exportar PDFs */}
+                      <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#f4f2ff] p-3">
+                        <span className="flex items-center gap-2 pr-2 text-sm font-semibold text-[#5b4de0]">
+                          <Download size={16} /> Exportar PDF
+                        </span>
+                        <button
+                          onClick={() => handleExportWorkouts(s)}
+                          className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
+                        >
+                          <Dumbbell size={15} /> Exportar treino
+                        </button>
+                        <button
+                          onClick={() => handleExportAssessment(s)}
+                          className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#5b4de0] ring-1 ring-[#d9d4ff] transition hover:bg-[#ebe8ff]"
+                        >
+                          <Ruler size={15} /> Exportar medidas
+                        </button>
+                      </div>
+
                       {/* Seção de Treinos separados por dias da semana */}
                       <div className="mt-5">
-                        <h5 className="mb-3 text-sm font-semibold text-neutral-700 flex items-center gap-2">
-                          <Dumbbell size={16} className="text-[#7c6cf0]" /> Fichas de Treino por Dia
+                        <h5 className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-700">
+                          <Dumbbell size={16} className="text-[#7c6cf0]" /> Fichas de treino por dia
                         </h5>
 
                         {workouts.length === 0 ? (
-                          <p className="text-xs text-neutral-400 italic">Nenhum treino cadastrado para este aluno.</p>
+                          <p className="text-xs italic text-neutral-400">
+                            Nenhum treino cadastrado para este aluno.
+                          </p>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                             {DAYS_ORDER.map((dayKey) => {
                               const dayExercises = exercisesByDay[dayKey] || [];
                               if (dayExercises.length === 0) return null;
 
                               return (
-                                <div key={dayKey} className="rounded-2xl bg-neutral-50 p-4 border border-neutral-100">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-[#7c6cf0] bg-[#e9e6ff] px-2.5 py-1 rounded-lg">
+                                <div
+                                  key={dayKey}
+                                  className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4"
+                                >
+                                  <div className="mb-2 flex items-center justify-between">
+                                    <span className="rounded-lg bg-[#e9e6ff] px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[#7c6cf0]">
                                       {DAYS_NAMES[dayKey]}
                                     </span>
-                                    <span className="text-xs text-neutral-400">{dayExercises.length} exercício(s)</span>
+                                    <span className="text-xs text-neutral-400">
+                                      {dayExercises.length} exercício(s)
+                                    </span>
                                   </div>
-                                  <div className="flex flex-col gap-2 mt-2">
+                                  <div className="mt-2 flex flex-col gap-2">
                                     {dayExercises.map((ex, idx) => (
-                                      <div key={idx} className="bg-white p-2.5 rounded-xl shadow-2xs border border-neutral-100">
+                                      <div
+                                        key={idx}
+                                        className="rounded-xl border border-neutral-100 bg-white p-2.5 shadow-sm"
+                                      >
                                         <p className="text-xs font-semibold text-neutral-800">{ex.name}</p>
-                                        <div className="flex items-center justify-between mt-1 text-[11px] text-neutral-500">
-                                          <span>{ex.sets} séries × {ex.reps}</span>
+                                        <div className="mt-1 flex items-center justify-between text-[11px] text-neutral-500">
+                                          <span>
+                                            {ex.sets} séries × {ex.reps}
+                                          </span>
                                           {ex.rest_time && (
                                             <span className="flex items-center gap-1 text-neutral-400">
                                               <Clock size={10} /> {ex.rest_time}

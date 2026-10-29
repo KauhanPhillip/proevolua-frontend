@@ -17,11 +17,11 @@ import {
   Users,
   Target,
   ClipboardList,
-  Activity,
   ChevronRight,
   Info,
   UserPlus,
   LogOut,
+  AlertCircle,
 } from "lucide-react";
 
 const BAR_COLORS = ["#7c6cf0", "#ff4d00", "#facc15", "#4ade80", "#38bdf8"];
@@ -41,11 +41,16 @@ export default function Dashboard() {
   const loadStudents = async () => {
     try {
       const response = await api.get(`/professors/${professorId}/students`);
-      setStudents(response.data);
+      setStudents(response.data || []);
     } catch (err) {
       console.error("Erro ao carregar alunos no Dashboard:", err);
     }
   };
+
+  // Filtro estrito de alunos ativos
+  const activeStudents = useMemo(() => {
+    return students.filter((s) => s.is_active !== false && s.is_active !== 0);
+  }, [students]);
 
   const handleSearchChange = (e) => {
     const value = e.target.value;
@@ -54,7 +59,7 @@ export default function Dashboard() {
     if (value.trim() === "") {
       setFilteredStudents([]);
     } else {
-      const results = students.filter(
+      const results = activeStudents.filter(
         (s) =>
           s.name.toLowerCase().includes(value.toLowerCase()) ||
           String(s.id).includes(value)
@@ -68,16 +73,25 @@ export default function Dashboard() {
     navigate("/auth/login");
   };
 
-  // Encurtador limpo de ID
   const formatId = (id) => `#${String(id).substring(0, 6).toUpperCase()}`;
 
-  // ---------- Dados derivados ----------
-  const withGoal = students.filter((s) => s.goal && String(s.goal).trim() !== "").length;
-  const goalPercent = students.length ? Math.round((withGoal / students.length) * 100) : 0;
+  const withGoal = activeStudents.filter((s) => s.goal && String(s.goal).trim() !== "").length;
+  const goalPercent = activeStudents.length ? Math.round((withGoal / activeStudents.length) * 100) : 0;
+
+  // Alunos ativos que precisam de reavaliação (+25 dias ou sem avaliação)
+  const studentsNeedingReview = useMemo(() => {
+    const targetDaysAgo = new Date();
+    targetDaysAgo.setDate(targetDaysAgo.getDate() - 25);
+
+    return activeStudents.filter((s) => {
+      if (!s.last_assessment_date) return true;
+      return new Date(s.last_assessment_date) < targetDaysAgo;
+    });
+  }, [activeStudents]);
 
   const goalsChart = useMemo(() => {
     const count = {};
-    students.forEach((s) => {
+    activeStudents.forEach((s) => {
       const g = s.goal && String(s.goal).trim() !== "" ? String(s.goal).trim() : "Sem objetivo";
       count[g] = (count[g] || 0) + 1;
     });
@@ -85,9 +99,9 @@ export default function Dashboard() {
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
-  }, [students]);
+  }, [activeStudents]);
 
-  const recentStudents = students.slice(-5).reverse();
+  const recentStudents = activeStudents.slice(-4).reverse();
 
   const initials = (name = "") =>
     name
@@ -104,11 +118,10 @@ export default function Dashboard() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">ProEvolua</h1>
-            <p className="text-sm text-neutral-500">Bem-vindo ao painel do professor!</p>
+            <p className="text-sm text-neutral-500">Painel de controle do professor</p>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Botão de Cadastrar Aluno */}
             <button
               onClick={() => navigate("/students")}
               className="flex items-center gap-2 rounded-2xl bg-[#ff4d00] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#e04400]"
@@ -116,7 +129,6 @@ export default function Dashboard() {
               <UserPlus size={18} /> Cadastrar aluno
             </button>
 
-            {/* Botão de Sair de volta */}
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-50"
@@ -126,7 +138,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Grade bento */}
+        {/* Grade Bento */}
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
           {/* Busca */}
           <div className="relative z-20 rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
@@ -180,38 +192,48 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Total de alunos (card escuro) */}
+          {/* Total de Alunos Ativos */}
           <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 p-6 text-white shadow-sm">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
               <Users size={20} />
             </div>
             <div>
-              <p className="text-6xl font-semibold leading-none">
-                {students.length}
-                <span className="ml-2 text-xl font-normal text-neutral-400">alunos</span>
+              <p className="text-5xl font-semibold leading-none">
+                {activeStudents.length}
+                <span className="ml-2 text-lg font-normal text-neutral-400">alunos</span>
               </p>
-              <p className="mt-2 text-sm text-neutral-400">Total cadastrado</p>
+              <p className="mt-2 text-sm text-neutral-400">Alunos ativos</p>
             </div>
           </div>
 
-          {/* Status do sistema (card laranja) */}
-          <div className="flex flex-col justify-between rounded-3xl bg-[#ff4d00] p-6 text-white shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20">
-              <Activity size={20} />
+          {/* Alerta de Reavaliações Pendentes (+25 dias) */}
+          <div
+            onClick={() => navigate("/reviews-pending")}
+            className="flex flex-col justify-between rounded-3xl bg-[#7c6cf0] p-6 text-white shadow-sm cursor-pointer transition hover:opacity-95 hover:shadow-md"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20">
+                <AlertCircle size={20} />
+              </div>
+              <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full flex items-center gap-1">
+                Ver todos <ChevronRight size={12} />
+              </span>
             </div>
             <div>
-              <h4 className="text-xl font-semibold leading-tight">Status do sistema</h4>
-              <div className="mt-3 flex items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium">
-                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
-                Ativo &amp; Sincronizado
-              </div>
+              <p className="text-4xl font-semibold leading-none">
+                {studentsNeedingReview.length}
+              </p>
+              <p className="mt-2 text-sm font-medium text-white/90">
+                Alunos p/ Reavaliação
+              </p>
+              <p className="text-xs text-white/70">+25 dias sem avaliação</p>
             </div>
           </div>
 
-          {/* Anel: alunos com objetivo definido */}
-          <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2 md:row-span-1">
+          {/* Anel: Alunos com Objetivo */}
+          <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
             <div className="flex items-center gap-4">
-              <div className="relative h-40 w-40 shrink-0">
+              <div className="relative h-36 w-36 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadialBarChart
                     innerRadius="78%"
@@ -230,31 +252,31 @@ export default function Dashboard() {
                   </RadialBarChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-semibold">{goalPercent}%</span>
-                  <span className="text-xs text-neutral-400">com objetivo</span>
+                  <span className="text-2xl font-semibold">{goalPercent}%</span>
+                  <span className="text-[10px] text-neutral-400">com objetivo</span>
                 </div>
               </div>
               <div>
-                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#fdf1c7]">
-                  <Target size={18} className="text-amber-600" />
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7]">
+                  <Target size={16} className="text-amber-600" />
                 </div>
-                <h4 className="text-xl font-semibold leading-tight">Metas definidas</h4>
-                <p className="mt-1 text-sm text-neutral-500">
+                <h4 className="text-lg font-semibold leading-tight">Metas definidas</h4>
+                <p className="mt-1 text-xs text-neutral-500">
                   <strong className="text-neutral-900">{withGoal}</strong> de{" "}
-                  <strong className="text-neutral-900">{students.length}</strong> alunos já têm
-                  objetivo cadastrado.
+                  <strong className="text-neutral-900">{activeStudents.length}</strong> alunos ativos possuem
+                  meta de treino.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Barras: alunos por objetivo */}
+          {/* Gráfico de Objetivos */}
           <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
-            <h4 className="mb-1 text-xl font-semibold leading-tight">Alunos por objetivo</h4>
-            <p className="mb-2 text-sm text-neutral-400">Os 5 objetivos mais comuns</p>
-            <div className="h-40">
+            <h4 className="mb-1 text-lg font-semibold leading-tight">Alunos por objetivo</h4>
+            <p className="mb-2 text-xs text-neutral-400">Distribuição das metas</p>
+            <div className="h-32">
               {goalsChart.length === 0 ? (
-                <p className="pt-12 text-center text-sm text-neutral-400">Sem dados ainda</p>
+                <p className="pt-8 text-center text-xs text-neutral-400">Sem dados ainda</p>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={goalsChart} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
@@ -262,16 +284,15 @@ export default function Dashboard() {
                       dataKey="name"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fontSize: 11, fill: "#9ca3af" }}
+                      tick={{ fontSize: 10, fill: "#9ca3af" }}
                       interval={0}
                     />
                     <Tooltip
                       cursor={{ fill: "transparent" }}
                       contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 20px rgba(0,0,0,.12)" }}
                       formatter={(v) => [`${v} aluno(s)`, ""]}
-                      labelFormatter={() => ""}
                     />
-                    <Bar dataKey="total" radius={[12, 12, 12, 12]} maxBarSize={36}>
+                    <Bar dataKey="total" radius={[10, 10, 10, 10]} maxBarSize={32}>
                       {goalsChart.map((_, i) => (
                         <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
                       ))}
@@ -282,11 +303,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Alunos recentes */}
+          {/* Alunos Recentes */}
           <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
-            <h4 className="mb-4 text-xl font-semibold leading-tight">Alunos recentes</h4>
+            <h4 className="mb-3 text-lg font-semibold leading-tight">Alunos recentes</h4>
             {recentStudents.length === 0 ? (
-              <p className="text-sm text-neutral-400">Nenhum aluno cadastrado.</p>
+              <p className="text-xs text-neutral-400">Nenhum aluno ativo cadastrado.</p>
             ) : (
               <div className="flex flex-col gap-1">
                 {recentStudents.map((s) => (
@@ -296,45 +317,45 @@ export default function Dashboard() {
                     className="flex cursor-pointer items-center justify-between rounded-xl p-2 transition hover:bg-neutral-100"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e9e6ff] text-xs font-semibold text-[#5b4de0]">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e9e6ff] text-xs font-semibold text-[#5b4de0]">
                         {initials(s.name)}
                       </span>
                       <div>
-                        <p className="m-0 text-sm font-medium">{s.name}</p>
-                        <p className="m-0 text-xs text-neutral-400">{s.goal || "Sem objetivo definido"}</p>
+                        <p className="m-0 text-xs font-medium">{s.name}</p>
+                        <p className="m-0 text-[10px] text-neutral-400">{s.goal || "Sem objetivo"}</p>
                       </div>
                     </div>
-                    <span className="text-xs text-neutral-400">{formatId(s.id)}</span>
+                    <span className="text-[10px] text-neutral-400">{formatId(s.id)}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Ações rápidas */}
+          {/* Ações Rápidas */}
           <div className="flex flex-col justify-between rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
             <div>
-              <h4 className="text-xl font-semibold leading-tight">Ações rápidas</h4>
-              <p className="mt-1 text-sm text-neutral-400">Acesse o que você mais usa</p>
+              <h4 className="text-lg font-semibold leading-tight">Ações rápidas</h4>
+              <p className="mt-1 text-xs text-neutral-400">Acesso direto às rotinas</p>
             </div>
-            <div className="mt-6 flex flex-col gap-3">
+            <div className="mt-4 flex flex-col gap-2.5">
               <button
                 onClick={() => navigate("/students")}
-                className="flex items-center justify-between rounded-2xl bg-[#ff4d00] px-5 py-3.5 text-base font-semibold text-white transition hover:bg-[#e04400]"
+                className="flex items-center justify-between rounded-2xl bg-[#ff4d00] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#e04400]"
               >
-                <span className="flex items-center gap-3">
-                  <UserPlus size={20} /> Cadastrar novo aluno
+                <span className="flex items-center gap-2.5">
+                  <UserPlus size={18} /> Cadastrar novo aluno
                 </span>
-                <ChevronRight size={20} />
+                <ChevronRight size={18} />
               </button>
               <button
                 onClick={() => navigate("/students")}
-                className="flex items-center justify-between rounded-2xl bg-[#7c6cf0] px-5 py-3.5 text-base font-semibold text-white transition hover:bg-[#6a59e6]"
+                className="flex items-center justify-between rounded-2xl bg-[#7c6cf0] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
               >
-                <span className="flex items-center gap-3">
-                  <ClipboardList size={20} /> Gerenciar todos os alunos
+                <span className="flex items-center gap-2.5">
+                  <ClipboardList size={18} /> Ver todos os alunos e treinos
                 </span>
-                <ChevronRight size={20} />
+                <ChevronRight size={18} />
               </button>
             </div>
           </div>

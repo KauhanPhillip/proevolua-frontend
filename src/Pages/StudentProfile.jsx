@@ -27,8 +27,22 @@ import {
   Check,
   X,
   TrendingUp,
-  Clock,
+  Download,
+  Power,
 } from "lucide-react";
+import { generateWorkoutPdf, generateAssessmentPdf } from "../utils/pdfReports";
+
+// Baixa um arquivo gerado no navegador
+const downloadFile = (file) => {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
 
 const inputClass =
   "w-full rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
@@ -37,7 +51,8 @@ const metricConfig = {
   weight: { label: "Peso", color: "#7c6cf0", unit: "kg" },
   body_fat: { label: "Gordura %", color: "#ff4d00", unit: "%" },
   waist: { label: "Cintura", color: "#16a34a", unit: "cm" },
-  skeletal_muscle: { label: "Massa Muscular", color: "#2563eb", unit: "kg" },
+  lean_mass: { label: "Massa magra", color: "#0ea5e9", unit: "kg" },
+  visceral_fat: { label: "Gordura visceral", color: "#f59e0b", unit: "" },
 };
 
 const DAYS_ORDER = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
@@ -49,8 +64,45 @@ const DAYS_NAMES = {
   sex: "Sexta-feira",
   sab: "Sábado",
   dom: "Domingo",
-  indefinido: "Outros Dias / Geral",
 };
+
+// Agrupa os exercícios de uma ficha por dia da semana
+const groupByDay = (exs = []) => {
+  const groups = DAYS_ORDER.map((k) => ({
+    key: k,
+    items: exs.filter((e) => e.day === k),
+  })).filter((g) => g.items.length > 0);
+
+  const orphans = exs.filter((e) => !DAYS_ORDER.includes(e.day));
+  if (orphans.length > 0) groups.push({ key: "", items: orphans });
+  return groups;
+};
+
+const EXTRA_FIELDS = [
+  { key: "body_fat_kg", label: "Gordura corporal", unit: "kg", step: "0.1" },
+  { key: "lean_mass", label: "Massa magra", unit: "kg", step: "0.1" },
+  { key: "skeletal_muscle", label: "Músculo esquelético", unit: "kg", step: "0.1" },
+  { key: "total_body_water", label: "Água corporal total", unit: "%", step: "0.1" },
+  { key: "visceral_fat", label: "Gordura visceral", unit: "nível", step: "1", int: true },
+  { key: "bone_mass", label: "Massa óssea", unit: "kg", step: "0.1" },
+  { key: "metabolic_age", label: "Idade metabólica", unit: "anos", step: "1", int: true },
+];
+
+const emptyExtra = () => Object.fromEntries(EXTRA_FIELDS.map((f) => [f.key, ""]));
+
+const extraFromAssessment = (a) =>
+  Object.fromEntries(EXTRA_FIELDS.map((f) => [f.key, a[f.key] ?? ""]));
+
+const extraPayload = (values) =>
+  Object.fromEntries(
+    EXTRA_FIELDS.map((f) => {
+      const v = values[f.key];
+      if (v === "" || v === null || v === undefined) return [f.key, null];
+      return [f.key, f.int ? parseInt(v) : parseFloat(v)];
+    })
+  );
+
+const hasValue = (v) => v !== null && v !== undefined && v !== "";
 
 function Field({ label, ...props }) {
   return (
@@ -71,41 +123,26 @@ export default function StudentProfile() {
   const [workouts, setWorkouts] = useState([]);
   const [assessments, setAssessments] = useState([]);
 
-  // Estado para alternar a métrica do gráfico
   const [chartMetric, setChartMetric] = useState("weight");
 
-  // Campos para nova avaliação (incluindo Bioimpedância)
   const [weight, setWeight] = useState("");
   const [height, setHeight] = useState("");
   const [bodyFat, setBodyFat] = useState("");
-  const [bodyFatKg, setBodyFatKg] = useState("");
-  const [leanMass, setLeanMass] = useState("");
-  const [skeletalMuscle, setSkeletalMuscle] = useState("");
-  const [totalBodyWater, setTotalBodyWater] = useState("");
-  const [visceralFat, setVisceralFat] = useState("");
-  const [boneMass, setBoneMass] = useState("");
-  const [metabolicAge, setMetabolicAge] = useState("");
   const [chest, setChest] = useState("");
   const [waist, setWaist] = useState("");
   const [arms, setArms] = useState("");
   const [legs, setLegs] = useState("");
+  const [extra, setExtra] = useState(emptyExtra());
 
-  // Estados para Edição Inline de Avaliação
   const [editingAssessmentId, setEditingAssessmentId] = useState(null);
   const [editWeight, setEditWeight] = useState("");
   const [editHeight, setEditHeight] = useState("");
   const [editBodyFat, setEditBodyFat] = useState("");
-  const [editBodyFatKg, setEditBodyFatKg] = useState("");
-  const [editLeanMass, setEditLeanMass] = useState("");
-  const [editSkeletalMuscle, setEditSkeletalMuscle] = useState("");
-  const [editTotalBodyWater, setEditTotalBodyWater] = useState("");
-  const [editVisceralFat, setEditVisceralFat] = useState("");
-  const [editBoneMass, setEditBoneMass] = useState("");
-  const [editMetabolicAge, setEditMetabolicAge] = useState("");
   const [editChest, setEditChest] = useState("");
   const [editWaist, setEditWaist] = useState("");
   const [editArms, setEditArms] = useState("");
   const [editLegs, setEditLegs] = useState("");
+  const [editExtra, setEditExtra] = useState(emptyExtra());
 
   useEffect(() => {
     loadStudentData();
@@ -140,6 +177,22 @@ export default function StudentProfile() {
     }
   };
 
+  // Função para alternar o status Ativo / Inativo
+  const toggleStatus = async () => {
+    try {
+      const newStatus = student.is_active === false ? true : false;
+      await api.put(`/students/${studentId}`, {
+        ...student,
+        is_active: newStatus,
+      });
+      setStudent({ ...student, is_active: newStatus });
+      alert(newStatus ? "Aluno ativado com sucesso!" : "Aluno desativado com sucesso!");
+    } catch (err) {
+      console.error("Erro ao alterar status:", err);
+      alert("Erro ao alterar o status do aluno.");
+    }
+  };
+
   const handleAddAssessment = async (e) => {
     e.preventDefault();
     if (!weight) {
@@ -153,33 +206,21 @@ export default function StudentProfile() {
         weight: parseFloat(weight),
         height: height ? parseFloat(height) : null,
         body_fat: bodyFat ? parseFloat(bodyFat) : null,
-        body_fat_kg: bodyFatKg ? parseFloat(bodyFatKg) : null,
-        lean_mass: leanMass ? parseFloat(leanMass) : null,
-        skeletal_muscle: skeletalMuscle ? parseFloat(skeletalMuscle) : null,
-        total_body_water: totalBodyWater ? parseFloat(totalBodyWater) : null,
-        visceral_fat: visceralFat ? parseInt(visceralFat, 10) : null,
-        bone_mass: boneMass ? parseFloat(boneMass) : null,
-        metabolic_age: metabolicAge ? parseInt(metabolicAge, 10) : null,
         chest: chest ? parseFloat(chest) : null,
         waist: waist ? parseFloat(waist) : null,
         arms: arms ? parseFloat(arms) : null,
         legs: legs ? parseFloat(legs) : null,
+        ...extraPayload(extra),
       });
 
       setWeight("");
       setHeight("");
       setBodyFat("");
-      setBodyFatKg("");
-      setLeanMass("");
-      setSkeletalMuscle("");
-      setTotalBodyWater("");
-      setVisceralFat("");
-      setBoneMass("");
-      setMetabolicAge("");
       setChest("");
       setWaist("");
       setArms("");
       setLegs("");
+      setExtra(emptyExtra());
       loadAssessments();
       alert("Avaliação física registrada com sucesso!");
     } catch (err) {
@@ -193,17 +234,11 @@ export default function StudentProfile() {
     setEditWeight(a.weight || "");
     setEditHeight(a.height || "");
     setEditBodyFat(a.body_fat || "");
-    setEditBodyFatKg(a.body_fat_kg || "");
-    setEditLeanMass(a.lean_mass || "");
-    setEditSkeletalMuscle(a.skeletal_muscle || "");
-    setEditTotalBodyWater(a.total_body_water || "");
-    setEditVisceralFat(a.visceral_fat || "");
-    setEditBoneMass(a.bone_mass || "");
-    setEditMetabolicAge(a.metabolic_age || "");
     setEditChest(a.chest || "");
     setEditWaist(a.waist || "");
     setEditArms(a.arms || "");
     setEditLegs(a.legs || "");
+    setEditExtra(extraFromAssessment(a));
   };
 
   const handleSaveEditAssessment = async (assessmentId) => {
@@ -212,17 +247,11 @@ export default function StudentProfile() {
         weight: parseFloat(editWeight),
         height: editHeight ? parseFloat(editHeight) : null,
         body_fat: editBodyFat ? parseFloat(editBodyFat) : null,
-        body_fat_kg: editBodyFatKg ? parseFloat(editBodyFatKg) : null,
-        lean_mass: editLeanMass ? parseFloat(editLeanMass) : null,
-        skeletal_muscle: editSkeletalMuscle ? parseFloat(editSkeletalMuscle) : null,
-        total_body_water: editTotalBodyWater ? parseFloat(editTotalBodyWater) : null,
-        visceral_fat: editVisceralFat ? parseInt(editVisceralFat, 10) : null,
-        bone_mass: editBoneMass ? parseFloat(editBoneMass) : null,
-        metabolic_age: editMetabolicAge ? parseInt(editMetabolicAge, 10) : null,
         chest: editChest ? parseFloat(editChest) : null,
         waist: editWaist ? parseFloat(editWaist) : null,
         arms: editArms ? parseFloat(editArms) : null,
         legs: editLegs ? parseFloat(editLegs) : null,
+        ...extraPayload(editExtra),
       });
 
       setEditingAssessmentId(null);
@@ -247,6 +276,34 @@ export default function StudentProfile() {
     }
   };
 
+  const handleExportWorkouts = () => {
+    if (workouts.length === 0) {
+      alert("Este aluno ainda não tem ficha de treino cadastrada.");
+      return;
+    }
+
+    try {
+      downloadFile(generateWorkoutPdf(student, workouts));
+    } catch (err) {
+      console.error("Erro ao gerar PDF do treino:", err);
+      alert("Erro ao gerar o PDF do treino.");
+    }
+  };
+
+  const handleExportAssessments = () => {
+    if (assessments.length === 0) {
+      alert("Este aluno ainda não tem avaliação física cadastrada.");
+      return;
+    }
+
+    try {
+      downloadFile(generateAssessmentPdf(student, assessments));
+    } catch (err) {
+      console.error("Erro ao gerar PDF das medidas:", err);
+      alert("Erro ao gerar o PDF das medidas.");
+    }
+  };
+
   const formatId = (id) => `#${String(id).substring(0, 6).toUpperCase()}`;
 
   const initials = (name = "") =>
@@ -257,7 +314,6 @@ export default function StudentProfile() {
       .map((p) => p[0].toUpperCase())
       .join("");
 
-  // Funções de Cálculo Automático (IMC e TMB)
   const calculateIMC = (w, h) => {
     if (!w || !h || h === 0) return null;
     const heightM = h > 3 ? h / 100 : h;
@@ -280,22 +336,6 @@ export default function StudentProfile() {
     return Math.round(tmb);
   };
 
-  // Agrupar exercícios por dia da semana
-  const groupExercisesByDay = (workoutsList) => {
-    const grouped = {};
-    workoutsList.forEach((w) => {
-      if (w.exercises && Array.isArray(w.exercises)) {
-        w.exercises.forEach((ex) => {
-          const day = ex.day || "indefinido";
-          if (!grouped[day]) grouped[day] = [];
-          grouped[day].push({ ...ex, workoutTitle: w.title });
-        });
-      }
-    });
-    return grouped;
-  };
-
-  // Gráfico de evolução (Recharts)
   const renderAdvancedChart = () => {
     const cfg = metricConfig[chartMetric];
 
@@ -314,12 +354,12 @@ export default function StudentProfile() {
           </span>
           <h4 className="text-xl font-semibold leading-tight">Painel de evolução</h4>
         </div>
-        <div className="flex flex-wrap gap-1 rounded-full bg-neutral-100 p-1">
+        <div className="flex flex-wrap gap-1 rounded-3xl bg-neutral-100 p-1">
           {Object.entries(metricConfig).map(([key, c]) => (
             <button
               key={key}
               onClick={() => setChartMetric(key)}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
                 chartMetric === key ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-900"
               }`}
             >
@@ -435,14 +475,13 @@ export default function StudentProfile() {
     );
   }
 
-  // Última avaliação cadastrada para calcular os indicadores atuais
   const latestAssessment = assessments.length > 0 ? assessments[assessments.length - 1] : null;
   const currentHeight = latestAssessment?.height || null;
   const currentWeight = latestAssessment?.weight || null;
   const currentIMC = calculateIMC(currentWeight, currentHeight);
   const imcInfo = getIMCClass(currentIMC);
   const currentTMB = calculateTMB(currentWeight, currentHeight, student.age);
-  const exercisesByDay = groupExercisesByDay(workouts);
+  const isStudentActive = student.is_active !== false;
 
   return (
     <div className="min-h-screen bg-[#ececec] p-4 font-sans text-neutral-900 md:p-8">
@@ -464,7 +503,7 @@ export default function StudentProfile() {
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
-          {/* Cabeçalho do aluno */}
+          {/* Cabeçalho do aluno com Botão Toggle Ativo/Inativo */}
           <div
             className={`rounded-3xl bg-white p-6 shadow-sm ${
               latestAssessment ? "md:col-span-2" : "md:col-span-4"
@@ -477,11 +516,34 @@ export default function StudentProfile() {
                 </span>
                 <div>
                   <h2 className="text-2xl font-semibold leading-tight tracking-tight">{student.name}</h2>
-                  <span className="mt-1 inline-block rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold tracking-wide text-[#5b4de0]">
-                    Matrícula: {formatId(student.id)}
-                  </span>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="inline-block rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold tracking-wide text-[#5b4de0]">
+                      Matrícula: {formatId(student.id)}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        isStudentActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
+                      }`}
+                    >
+                      {isStudentActive ? "Ativo" : "Inativo"}
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {/* Botão Toggle Status */}
+              <button
+                onClick={toggleStatus}
+                title={isStudentActive ? "Desativar aluno" : "Ativar aluno"}
+                className={`flex items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-semibold shadow-sm transition ${
+                  isStudentActive
+                    ? "bg-red-50 text-red-600 hover:bg-red-100"
+                    : "bg-green-50 text-green-700 hover:bg-green-100"
+                }`}
+              >
+                <Power size={14} />
+                {isStudentActive ? "Desativar" : "Ativar"}
+              </button>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2 text-sm">
@@ -506,6 +568,25 @@ export default function StudentProfile() {
                 </span>
               </div>
             )}
+
+            {/* Exportar PDFs */}
+            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#f4f2ff] p-3">
+              <span className="flex items-center gap-2 pr-2 text-sm font-semibold text-[#5b4de0]">
+                <Download size={16} /> Exportar PDF
+              </span>
+              <button
+                onClick={handleExportWorkouts}
+                className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
+              >
+                <Dumbbell size={15} /> Exportar treino
+              </button>
+              <button
+                onClick={handleExportAssessments}
+                className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#5b4de0] ring-1 ring-[#d9d4ff] transition hover:bg-[#ebe8ff]"
+              >
+                <Ruler size={15} /> Exportar medidas
+              </button>
+            </div>
           </div>
 
           {/* IMC (card escuro) */}
@@ -570,11 +651,11 @@ export default function StudentProfile() {
             </div>
           </div>
 
-          {/* ABA DE TREINOS SEPARADOS POR DIAS */}
+          {/* ABA DE TREINOS */}
           {activeTab === "workouts" && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 md:col-span-4">
-                <h3 className="text-xl font-semibold">Fichas do aluno (por dia)</h3>
+                <h3 className="text-xl font-semibold">Fichas do aluno</h3>
                 <button
                   onClick={() => navigate(`/workouts/${studentId}`)}
                   className="flex items-center gap-2 rounded-full bg-[#7c6cf0] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
@@ -588,45 +669,52 @@ export default function StudentProfile() {
                   Nenhuma ficha de treino cadastrada para este aluno.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:col-span-4">
-                  {DAYS_ORDER.concat("indefinido").map((dayKey) => {
-                    const dayExercises = exercisesByDay[dayKey] || [];
-                    if (dayExercises.length === 0) return null;
-
-                    return (
-                      <div key={dayKey} className="rounded-3xl bg-white p-6 shadow-sm">
-                        <div className="mb-4 flex items-center justify-between">
-                          <span className="rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#5b4de0]">
-                            {DAYS_NAMES[dayKey] || dayKey}
-                          </span>
-                          <span className="text-xs text-neutral-400">{dayExercises.length} exercício(s)</span>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          {dayExercises.map((ex, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm"
-                            >
-                              <div>
-                                <strong className="font-medium">{ex.name}</strong>
-                                <span className="block text-[11px] text-neutral-400">Ficha: {ex.workoutTitle}</span>
-                              </div>
-                              <span className="text-neutral-500 text-right">
-                                {ex.sets}x{ex.reps}
-                                {ex.rest_time && (
-                                  <span className="ml-2 flex items-center gap-1 text-xs text-neutral-400 inline-flex">
-                                    <Clock size={12} /> {ex.rest_time}
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                workouts.map((w) => (
+                  <div key={w.id} className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+                    <div className="mb-4 flex items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff]">
+                        <Dumbbell size={18} className="text-[#5b4de0]" />
+                      </span>
+                      <div>
+                        <h4 className="text-lg font-semibold leading-tight">{w.title}</h4>
+                        {w.description && <p className="text-sm text-neutral-500">{w.description}</p>}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+
+                    <div className="flex flex-col gap-4">
+                      {groupByDay(w.exercises || []).map((g) => (
+                        <div key={g.key || "none"}>
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-semibold text-[#5b4de0]">
+                              {g.key ? DAYS_NAMES[g.key] : "Exercícios"}
+                            </span>
+                            <span className="text-xs text-neutral-400">
+                              {g.items.length} exercício{g.items.length > 1 ? "s" : ""}
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {g.items.map((ex, idx) => (
+                              <div key={idx} className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                  <strong className="font-medium">{ex.name}</strong>
+                                  <span className="shrink-0 text-neutral-500">
+                                    {ex.sets}x{ex.reps}
+                                    <span className="ml-2 text-xs text-neutral-400">
+                                      descanso {ex.rest_time || "-"}
+                                    </span>
+                                  </span>
+                                </div>
+                                {ex.notes && (
+                                  <p className="mt-1 text-xs text-neutral-400">Obs: {ex.notes}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
               )}
             </>
           )}
@@ -634,42 +722,43 @@ export default function StudentProfile() {
           {/* ABA DE AVALIAÇÕES E MEDIDAS */}
           {activeTab === "assessments" && (
             <>
-              {/* Formulário nova avaliação com Bioimpedância */}
               <form
                 onSubmit={handleAddAssessment}
                 className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4"
               >
                 <h3 className="mb-4 text-xl font-semibold leading-tight">
-                  Registrar nova avaliação física &amp; Bioimpedância
+                  Registrar nova avaliação física
                   <span className="block text-sm font-normal text-neutral-400">
-                    Apenas o peso é obrigatório
+                    Só o peso é obrigatório
                   </span>
                 </h3>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <Field label="Peso (kg) *" step="0.1" placeholder="Ex: 78.5" value={weight} onChange={(e) => setWeight(e.target.value)} required />
                   <Field label="Altura (m)" step="0.01" placeholder="Ex: 1.75" value={height} onChange={(e) => setHeight(e.target.value)} />
-                  <Field label="Gordura corporal (%)" step="0.1" placeholder="Ex: 18" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} />
+                  <Field label="% Gordura corporal" step="0.1" placeholder="Ex: 18" value={bodyFat} onChange={(e) => setBodyFat(e.target.value)} />
                 </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
-                  <Field label="Massa gorda (kg)" step="0.1" placeholder="Ex: 12.5" value={bodyFatKg} onChange={(e) => setBodyFatKg(e.target.value)} />
-                  <Field label="Massa magra (kg)" step="0.1" placeholder="Ex: 62.0" value={leanMass} onChange={(e) => setLeanMass(e.target.value)} />
-                  <Field label="Massa muscular esc. (kg)" step="0.1" placeholder="Ex: 32.0" value={skeletalMuscle} onChange={(e) => setSkeletalMuscle(e.target.value)} />
-                  <Field label="Água corporal (%)" step="0.1" placeholder="Ex: 55.0" value={totalBodyWater} onChange={(e) => setTotalBodyWater(e.target.value)} />
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Field label="Gordura visceral (1-59)" step="1" placeholder="Ex: 5" value={visceralFat} onChange={(e) => setVisceralFat(e.target.value)} />
-                  <Field label="Massa óssea (kg)" step="0.1" placeholder="Ex: 3.2" value={boneMass} onChange={(e) => setBoneMass(e.target.value)} />
-                  <Field label="Idade metabólica" step="1" placeholder="Ex: 25" value={metabolicAge} onChange={(e) => setMetabolicAge(e.target.value)} />
-                </div>
-
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <Field label="Peitoral (cm)" step="0.1" value={chest} onChange={(e) => setChest(e.target.value)} />
                   <Field label="Cintura (cm)" step="0.1" value={waist} onChange={(e) => setWaist(e.target.value)} />
                   <Field label="Braços (cm)" step="0.1" value={arms} onChange={(e) => setArms(e.target.value)} />
                   <Field label="Pernas (cm)" step="0.1" value={legs} onChange={(e) => setLegs(e.target.value)} />
+                </div>
+
+                <p className="mb-2 mt-5 text-sm font-semibold text-neutral-700">
+                  Composição corporal (bioimpedância)
+                  <span className="ml-2 font-normal text-neutral-400">opcional</span>
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {EXTRA_FIELDS.map((f) => (
+                    <Field
+                      key={f.key}
+                      label={`${f.label} (${f.unit})`}
+                      step={f.step}
+                      value={extra[f.key]}
+                      onChange={(e) => setExtra({ ...extra, [f.key]: e.target.value })}
+                    />
+                  ))}
                 </div>
 
                 <button
@@ -693,6 +782,7 @@ export default function StudentProfile() {
                   const itemIMC = calculateIMC(a.weight, a.height);
                   const itemClass = getIMCClass(itemIMC);
                   const isEditing = editingAssessmentId === a.id;
+                  const filledExtras = EXTRA_FIELDS.filter((f) => hasValue(a[f.key]));
 
                   return (
                     <div
@@ -709,148 +799,101 @@ export default function StudentProfile() {
                             <Field label="Altura (m)" step="0.01" value={editHeight} onChange={(e) => setEditHeight(e.target.value)} />
                             <Field label="% Gordura" step="0.1" value={editBodyFat} onChange={(e) => setEditBodyFat(e.target.value)} />
                           </div>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                            <Field label="Massa gorda (kg)" step="0.1" value={editBodyFatKg} onChange={(e) => setEditBodyFatKg(e.target.value)} />
-                            <Field label="Massa magra (kg)" step="0.1" value={editLeanMass} onChange={(e) => setEditLeanMass(e.target.value)} />
-                            <Field label="Massa muscular (kg)" step="0.1" value={editSkeletalMuscle} onChange={(e) => setEditSkeletalMuscle(e.target.value)} />
-                            <Field label="Água corporal (%)" step="0.1" value={editTotalBodyWater} onChange={(e) => setEditTotalBodyWater(e.target.value)} />
-                          </div>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                            <Field label="Gordura visceral" step="1" value={editVisceralFat} onChange={(e) => setEditVisceralFat(e.target.value)} />
-                            <Field label="Massa óssea (kg)" step="0.1" value={editBoneMass} onChange={(e) => setEditBoneMass(e.target.value)} />
-                            <Field label="Idade metabólica" step="1" value={editMetabolicAge} onChange={(e) => setEditMetabolicAge(e.target.value)} />
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <Field label="Peitoral" step="0.1" value={editChest} onChange={(e) => setEditChest(e.target.value)} />
+                            <Field label="Cintura" step="0.1" value={editWaist} onChange={(e) => setEditWaist(e.target.value)} />
+                            <Field label="Braços" step="0.1" value={editArms} onChange={(e) => setEditArms(e.target.value)} />
+                            <Field label="Pernas" step="0.1" value={editLegs} onChange={(e) => setEditLegs(e.target.value)} />
                           </div>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                            <Field label="Peitoral (cm)" step="0.1" value={editChest} onChange={(e) => setEditChest(e.target.value)} />
-                            <Field label="Cintura (cm)" step="0.1" value={editWaist} onChange={(e) => setEditWaist(e.target.value)} />
-                            <Field label="Braços (cm)" step="0.1" value={editArms} onChange={(e) => setEditArms(e.target.value)} />
-                            <Field label="Pernas (cm)" step="0.1" value={editLegs} onChange={(e) => setEditLegs(e.target.value)} />
+                            {EXTRA_FIELDS.map((f) => (
+                              <Field
+                                key={f.key}
+                                label={f.label}
+                                step={f.step}
+                                value={editExtra[f.key]}
+                                onChange={(e) => setEditExtra({ ...editExtra, [f.key]: e.target.value })}
+                              />
+                            ))}
                           </div>
-                          <div className="mt-1 flex gap-2">
+                          <div className="flex gap-2 mt-2">
                             <button
                               onClick={() => handleSaveEditAssessment(a.id)}
-                              className="flex items-center gap-2 rounded-2xl bg-[#7c6cf0] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
+                              className="flex items-center gap-1.5 rounded-full bg-green-600 px-4 py-2 text-xs font-semibold text-white"
                             >
-                              <Check size={16} /> Salvar
+                              <Check size={14} /> Salvar
                             </button>
                             <button
                               onClick={() => setEditingAssessmentId(null)}
-                              className="flex items-center gap-2 rounded-2xl bg-neutral-100 px-5 py-2.5 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+                              className="flex items-center gap-1.5 rounded-full bg-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700"
                             >
-                              <X size={16} /> Cancelar
+                              <X size={14} /> Cancelar
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <>
-                          <div className="mb-4 flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-[#5b4de0]">
-                                {a.created_at
-                                  ? new Date(a.created_at).toLocaleDateString("pt-BR")
-                                  : "Recente"}
-                              </p>
-                              {itemIMC && (
-                                <span
-                                  className="mt-1 inline-block rounded-full px-3 py-1 text-xs font-semibold"
-                                  style={{ backgroundColor: `${itemClass.color}22`, color: itemClass.color }}
-                                >
-                                  IMC {itemIMC} · {itemClass.text}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex gap-1.5">
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs font-semibold text-neutral-400">
+                              {new Date(a.created_at).toLocaleDateString("pt-BR", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              })}
+                            </span>
+                            <div className="flex gap-1">
                               <button
                                 onClick={() => handleStartEditAssessment(a)}
-                                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] text-amber-700 transition hover:bg-amber-200"
-                                aria-label="Editar avaliação"
+                                className="p-2 rounded-full hover:bg-neutral-100 text-neutral-600"
+                                title="Editar"
                               >
-                                <Pencil size={15} />
+                                <Pencil size={14} />
                               </button>
                               <button
                                 onClick={() => handleDeleteAssessment(a.id)}
-                                className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
-                                aria-label="Excluir avaliação"
+                                className="p-2 rounded-full hover:bg-red-50 text-red-600"
+                                title="Excluir"
                               >
-                                <Trash2 size={15} />
+                                <Trash2 size={14} />
                               </button>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-2 text-sm mb-2">
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Peso</span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                            <div className="bg-neutral-50 p-2 rounded-2xl">
+                              <span className="block text-[10px] text-neutral-400">Peso</span>
                               <strong>{a.weight} kg</strong>
                             </div>
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Altura</span>
-                              <strong>{a.height || "-"} m</strong>
-                            </div>
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Gordura %</span>
-                              <strong>{a.body_fat ? `${a.body_fat}%` : "-"}</strong>
-                            </div>
+                            {a.height && (
+                              <div className="bg-neutral-50 p-2 rounded-2xl">
+                                <span className="block text-[10px] text-neutral-400">Altura</span>
+                                <strong>{a.height} m</strong>
+                              </div>
+                            )}
+                            {a.body_fat && (
+                              <div className="bg-neutral-50 p-2 rounded-2xl">
+                                <span className="block text-[10px] text-neutral-400">% Gordura</span>
+                                <strong>{a.body_fat}%</strong>
+                              </div>
+                            )}
+                            {a.waist && (
+                              <div className="bg-neutral-50 p-2 rounded-2xl">
+                                <span className="block text-[10px] text-neutral-400">Cintura</span>
+                                <strong>{a.waist} cm</strong>
+                              </div>
+                            )}
                           </div>
 
-                          {/* Seção bioimpedância se houver dados */}
-                          {(a.body_fat_kg || a.lean_mass || a.skeletal_muscle || a.total_body_water) && (
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-2">
-                              <div className="rounded-2xl bg-[#f8f7ff] p-3 border border-[#e9e6ff]">
-                                <span className="block text-xs text-neutral-500">Massa Gorda</span>
-                                <strong className="text-[#5b4de0]">{a.body_fat_kg ? `${a.body_fat_kg} kg` : "-"}</strong>
-                              </div>
-                              <div className="rounded-2xl bg-[#f8f7ff] p-3 border border-[#e9e6ff]">
-                                <span className="block text-xs text-neutral-500">Massa Magra</span>
-                                <strong className="text-[#5b4de0]">{a.lean_mass ? `${a.lean_mass} kg` : "-"}</strong>
-                              </div>
-                              <div className="rounded-2xl bg-[#f8f7ff] p-3 border border-[#e9e6ff]">
-                                <span className="block text-xs text-neutral-500">Massa Muscular</span>
-                                <strong className="text-[#5b4de0]">{a.skeletal_muscle ? `${a.skeletal_muscle} kg` : "-"}</strong>
-                              </div>
-                              <div className="rounded-2xl bg-[#f8f7ff] p-3 border border-[#e9e6ff]">
-                                <span className="block text-xs text-neutral-500">Água Corporal</span>
-                                <strong className="text-[#5b4de0]">{a.total_body_water ? `${a.total_body_water}%` : "-"}</strong>
-                              </div>
+                          {filledExtras.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-1.5 pt-2 border-t border-neutral-100">
+                              {filledExtras.map((f) => (
+                                <span key={f.key} className="bg-neutral-100 px-2.5 py-1 rounded-full text-[11px] text-neutral-600">
+                                  {f.label}: <strong>{a[f.key]} {f.unit}</strong>
+                                </span>
+                              ))}
                             </div>
                           )}
-
-                          {(a.visceral_fat || a.bone_mass || a.metabolic_age) && (
-                            <div className="grid grid-cols-3 gap-2 text-sm mb-2">
-                              <div className="rounded-2xl bg-neutral-100 p-3">
-                                <span className="block text-xs text-neutral-500">Gord. Visceral</span>
-                                <strong>{a.visceral_fat || "-"}</strong>
-                              </div>
-                              <div className="rounded-2xl bg-neutral-100 p-3">
-                                <span className="block text-xs text-neutral-500">Massa Óssea</span>
-                                <strong>{a.bone_mass ? `${a.bone_mass} kg` : "-"}</strong>
-                              </div>
-                              <div className="rounded-2xl bg-neutral-100 p-3">
-                                <span className="block text-xs text-neutral-500">Idade Metab.</span>
-                                <strong>{a.metabolic_age ? `${a.metabolic_age} anos` : "-"}</strong>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="mt-2 grid grid-cols-4 gap-2 text-sm">
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Peitoral</span>
-                              <strong>{a.chest || "-"}</strong>
-                            </div>
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Cintura</span>
-                              <strong>{a.waist || "-"}</strong>
-                            </div>
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Braços</span>
-                              <strong>{a.arms || "-"}</strong>
-                            </div>
-                            <div className="rounded-2xl bg-neutral-100 p-3">
-                              <span className="block text-xs text-neutral-500">Pernas</span>
-                              <strong>{a.legs || "-"}</strong>
-                            </div>
-                          </div>
-                          <p className="mt-2 text-right text-xs text-neutral-400">circunferências em cm</p>
-                        </>
+                        </div>
                       )}
                     </div>
                   );
