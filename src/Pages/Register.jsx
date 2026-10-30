@@ -18,16 +18,16 @@ import {
 } from "lucide-react";
 
 const inputClass =
-  "w-full rounded-2xl bg-neutral-100 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+  "w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 dark:text-white py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
 const iconClass = "absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400";
-const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600";
+const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600 dark:text-neutral-300";
 
 export default function Register() {
   const [formData, setFormData] = useState({
     full_name: "",
     email: "",
     password: "",
-    age: "",
+    birth_date: "",
     phone: "",
     cref: "",
     specialty: "",
@@ -53,7 +53,7 @@ export default function Register() {
     try {
       await api.post("/professors", {
         ...formData,
-        age: parseInt(formData.age, 10),
+        birth_date: formData.birth_date || null,
       });
 
       setSuccess("Cadastro realizado com sucesso! Redirecionando para o login...");
@@ -69,7 +69,7 @@ export default function Register() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#ececec] p-4 font-sans text-neutral-900">
+    <div className="flex min-h-screen items-center justify-center bg-[#ececec] dark:bg-neutral-950 p-4 font-sans text-neutral-900 dark:text-neutral-100 transition-colors">
       <div className="grid w-full max-w-5xl grid-cols-1 gap-5 md:grid-cols-5">
         {/* Card laranja de destaque (some no celular) */}
         <div className="relative hidden flex-col justify-between overflow-hidden rounded-3xl bg-[#ff4d00] p-8 text-white shadow-sm md:col-span-2 md:flex">
@@ -103,9 +103,8 @@ export default function Register() {
         {/* Card do formulário */}
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col justify-center rounded-3xl bg-white p-8 shadow-sm md:col-span-3 md:p-10"
+          className="flex flex-col justify-center rounded-3xl bg-white dark:bg-neutral-900 p-8 shadow-sm dark:border dark:border-neutral-800 md:col-span-3 md:p-10"
         >
-          {/* Marca no celular */}
           <div className="mb-6 flex items-center gap-3 md:hidden">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ff4d00] text-white">
               <Dumbbell size={18} />
@@ -123,20 +122,19 @@ export default function Register() {
           </h2>
 
           {error && (
-            <div className="mt-6 flex items-center gap-2 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+            <div className="mt-6 flex items-center gap-2 rounded-2xl bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400">
               <AlertCircle size={18} className="shrink-0" />
               {error}
             </div>
           )}
           {success && (
-            <div className="mt-6 flex items-center gap-2 rounded-2xl bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+            <div className="mt-6 flex items-center gap-2 rounded-2xl bg-green-50 dark:bg-green-950/40 px-4 py-3 text-sm font-medium text-green-700 dark:text-green-300">
               <CheckCircle2 size={18} className="shrink-0" />
               {success}
             </div>
           )}
 
           <div className="mt-6 flex flex-col gap-4">
-            {/* Nome */}
             <div>
               <label className={labelClass}>Nome completo</label>
               <div className="relative">
@@ -153,7 +151,6 @@ export default function Register() {
               </div>
             </div>
 
-            {/* Email */}
             <div>
               <label className={labelClass}>Email</label>
               <div className="relative">
@@ -170,7 +167,6 @@ export default function Register() {
               </div>
             </div>
 
-            {/* Senha */}
             <div>
               <label className={labelClass}>Senha</label>
               <div className="relative">
@@ -187,7 +183,7 @@ export default function Register() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 transition hover:text-neutral-700"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 transition hover:text-neutral-700 dark:hover:text-neutral-200"
                   aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -195,18 +191,16 @@ export default function Register() {
               </div>
             </div>
 
-            {/* Idade + Telefone */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
               <div className="sm:col-span-2">
-                <label className={labelClass}>Idade</label>
+                <label className={labelClass}>Data de Nascimento</label>
                 <div className="relative">
                   <Calendar size={18} className={iconClass} />
                   <input
-                    type="number"
-                    name="age"
-                    value={formData.age}
+                    type="date"
+                    name="birth_date"
+                    value={formData.birth_date}
                     onChange={handleChange}
-                    placeholder="Ex: 28"
                     required
                     className={inputClass}
                   />
@@ -229,7 +223,6 @@ export default function Register() {
               </div>
             </div>
 
-            {/* CREF + Especialidade */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass}>CREF</label>
@@ -270,7 +263,7 @@ export default function Register() {
             Finalizar cadastro
           </button>
 
-          <p className="mt-5 text-center text-sm text-neutral-500">
+          <p className="mt-5 text-center text-sm text-neutral-500 dark:text-neutral-400">
             Já possui conta?{" "}
             <Link to="/" className="font-semibold text-[#5b4de0] hover:underline">
               Faça login aqui

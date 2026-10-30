@@ -21,13 +21,13 @@ import {
 } from "lucide-react";
 
 const inputClass =
-  "w-full rounded-2xl bg-neutral-100 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+  "w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 dark:text-white py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
 const smallInputClass =
-  "w-full rounded-xl bg-neutral-100 px-3 py-2 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+  "w-full rounded-xl bg-neutral-100 dark:bg-neutral-800 dark:text-white px-3 py-2 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
 const editInputClass =
-  "w-full rounded-xl bg-white px-3 py-2 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+  "w-full rounded-xl bg-white dark:bg-neutral-800 dark:text-white px-3 py-2 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
 const iconClass = "absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400";
-const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600";
+const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600 dark:text-neutral-300";
 
 const DAYS = [
   { key: "seg", label: "Seg", full: "Segunda-feira" },
@@ -42,7 +42,6 @@ const DAYS = [
 const isKnownDay = (key) => DAYS.some((d) => d.key === key);
 const dayFull = (key) => DAYS.find((d) => d.key === key)?.full || "Sem dia definido";
 
-// Agrupa exercícios por dia, mantendo o índice original (necessário para remover/editar)
 const groupByDay = (exs = []) => {
   const withIdx = exs.map((ex, idx) => ({ ex, idx }));
   const groups = DAYS.map((d) => ({
@@ -50,7 +49,6 @@ const groupByDay = (exs = []) => {
     items: withIdx.filter((i) => i.ex.day === d.key),
   })).filter((g) => g.items.length > 0);
 
-  // Exercícios antigos (sem dia) ficam num grupo à parte
   const orphans = withIdx.filter((i) => !isKnownDay(i.ex.day));
   if (orphans.length > 0) groups.push({ key: "", items: orphans });
   return groups;
@@ -79,7 +77,7 @@ function DayPills({ value, onChange, counts = {}, showNone = false }) {
             className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
               active
                 ? "bg-[#7c6cf0] text-white"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700"
             }`}
           >
             {d.label}
@@ -101,8 +99,8 @@ function DayPills({ value, onChange, counts = {}, showNone = false }) {
           onClick={() => onChange("")}
           className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
             value === ""
-              ? "bg-neutral-900 text-white"
-              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+              ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+              : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700"
           }`}
         >
           Sem dia ({counts[""] || 0})
@@ -122,7 +120,6 @@ export default function Workouts() {
   const [description, setDescription] = useState("");
   const [exercises, setExercises] = useState([]);
 
-  // Dia selecionado na montagem da ficha
   const [selectedDay, setSelectedDay] = useState("seg");
 
   const [exName, setExName] = useState("");
@@ -211,14 +208,12 @@ export default function Workouts() {
     setEditDescription(workout.description || "");
     setEditExercises(exs);
 
-    // Abre no primeiro dia que tem exercício (ou segunda por padrão)
     const firstGroup = groupByDay(exs)[0];
     setEditDay(firstGroup ? firstGroup.key : "seg");
   };
 
   const handleSaveEdit = async (workoutId) => {
     try {
-      // Remove linhas em branco e normaliza as séries
       const cleaned = editExercises
         .filter((ex) => ex.name && String(ex.name).trim() !== "")
         .map((ex) => ({ ...ex, sets: parseInt(ex.sets) || 0 }));
@@ -252,7 +247,6 @@ export default function Workouts() {
     }
   };
 
-  // Atualiza um campo de um exercício na edição (sem mutar o estado original)
   const updateEditExercise = (idx, field, value) => {
     setEditExercises(editExercises.map((ex, i) => (i === idx ? { ...ex, [field]: value } : ex)));
   };
@@ -271,19 +265,19 @@ export default function Workouts() {
   const daysUsed = tempGroups.length;
 
   return (
-    <div className="min-h-screen bg-[#ececec] p-4 font-sans text-neutral-900 md:p-8">
+    <div className="min-h-screen bg-[#ececec] dark:bg-neutral-950 p-4 font-sans text-neutral-900 dark:text-neutral-100 transition-colors md:p-8">
       <div className="mx-auto max-w-6xl">
         {/* Barra superior */}
         <div className="mb-6 flex gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md"
+            className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md dark:border dark:border-neutral-800"
           >
             <ArrowLeft size={16} /> Voltar
           </button>
           <button
             onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-700"
+            className="flex items-center gap-2 rounded-full bg-neutral-900 dark:bg-neutral-100 px-4 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm transition hover:bg-neutral-700"
           >
             <Home size={16} /> Início
           </button>
@@ -291,12 +285,12 @@ export default function Workouts() {
 
         <div className="mb-6">
           <h1 className="text-3xl font-semibold tracking-tight">Gestão de treinos</h1>
-          <p className="text-sm text-neutral-500">Monte as fichas do aluno separadas por dia da semana</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Monte as fichas do aluno separadas por dia da semana</p>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
           {/* Fichas cadastradas (card escuro) */}
-          <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 p-6 text-white shadow-sm md:col-span-2">
+          <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 dark:border dark:border-neutral-800 p-6 text-white shadow-sm md:col-span-2">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
               <Dumbbell size={20} />
             </div>
@@ -328,10 +322,10 @@ export default function Workouts() {
           {/* Montagem da ficha */}
           <form
             onSubmit={handleCreateWorkout}
-            className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4"
+            className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-4"
           >
             <div className="mb-5 flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e9e6ff]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e9e6ff] dark:bg-neutral-800">
                 <ClipboardList size={20} className="text-[#5b4de0]" />
               </span>
               <h3 className="text-xl font-semibold leading-tight">
@@ -343,7 +337,6 @@ export default function Workouts() {
             </div>
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              {/* Coluna esquerda: dados + exercício */}
               <div className="flex flex-col gap-4">
                 <div>
                   <label className={labelClass}>Título</label>
@@ -381,8 +374,7 @@ export default function Workouts() {
                   <DayPills value={selectedDay} onChange={setSelectedDay} counts={tempCounts} />
                 </div>
 
-                {/* Caixa de exercício */}
-                <div className="rounded-2xl border-2 border-dashed border-neutral-200 p-4">
+                <div className="rounded-2xl border-2 border-dashed border-neutral-200 dark:border-neutral-800 p-4">
                   <h4 className="mb-3 flex items-center gap-2 text-base font-semibold">
                     <Dumbbell size={16} className="text-[#5b4de0]" />
                     Adicionar exercício · {dayFull(selectedDay)}
@@ -440,7 +432,7 @@ export default function Workouts() {
                     <button
                       type="button"
                       onClick={handleAddExerciseToState}
-                      className="flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-700"
+                      className="flex items-center justify-center gap-2 rounded-xl bg-neutral-900 dark:bg-neutral-100 px-4 py-2.5 text-sm font-semibold text-white dark:text-neutral-900 transition hover:bg-neutral-700"
                     >
                       <Plus size={16} /> Adicionar em {dayFull(selectedDay)}
                     </button>
@@ -449,7 +441,7 @@ export default function Workouts() {
               </div>
 
               {/* Coluna direita: resumo da ficha por dia */}
-              <div className="rounded-2xl bg-neutral-50 p-4 ring-1 ring-neutral-200/70">
+              <div className="rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 p-4 ring-1 ring-neutral-200/70 dark:ring-neutral-800">
                 <p className="mb-3 text-sm font-semibold">
                   Resumo da ficha{" "}
                   <span className="font-normal text-neutral-400">
@@ -468,7 +460,7 @@ export default function Workouts() {
                     {tempGroups.map((g) => (
                       <div key={g.key || "none"}>
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-semibold text-[#5b4de0]">
+                          <span className="rounded-full bg-[#e9e6ff] dark:bg-neutral-800 px-3 py-1 text-xs font-semibold text-[#5b4de0]">
                             {dayFull(g.key)}
                           </span>
                           <span className="text-xs text-neutral-400">{g.items.length}</span>
@@ -477,7 +469,7 @@ export default function Workouts() {
                           {g.items.map(({ ex, idx }) => (
                             <div
                               key={idx}
-                              className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-sm shadow-sm"
+                              className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-neutral-900 px-3 py-2 text-sm shadow-sm dark:border dark:border-neutral-800"
                             >
                               <div className="min-w-0">
                                 <strong className="block truncate font-medium">{ex.name}</strong>
@@ -489,7 +481,7 @@ export default function Workouts() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveTempExercise(idx)}
-                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 transition hover:bg-red-100"
                                 aria-label="Remover exercício"
                               >
                                 <Trash2 size={14} />
@@ -516,7 +508,7 @@ export default function Workouts() {
           <h3 className="mt-2 text-xl font-semibold md:col-span-4">Fichas cadastradas</h3>
 
           {workouts.length === 0 ? (
-            <div className="rounded-3xl bg-white p-8 text-center text-sm text-neutral-400 shadow-sm md:col-span-4">
+            <div className="rounded-3xl bg-white dark:bg-neutral-900 p-8 text-center text-sm text-neutral-400 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
               Nenhuma ficha de treino cadastrada para este aluno.
             </div>
           ) : (
@@ -524,7 +516,6 @@ export default function Workouts() {
               const isEditing = editingId === w.id;
               const groups = groupByDay(w.exercises || []);
 
-              // Dados da edição
               const editCounts = countByDay(editExercises);
               const hasOrphans = (editCounts[""] || 0) > 0;
               const visibleEdit = editExercises
@@ -534,7 +525,7 @@ export default function Workouts() {
               return (
                 <div
                   key={w.id}
-                  className={`rounded-3xl bg-white p-6 shadow-sm ${
+                  className={`rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 ${
                     isEditing ? "md:col-span-4" : "md:col-span-2"
                   }`}
                 >
@@ -585,13 +576,13 @@ export default function Workouts() {
 
                       <div className="flex flex-col gap-3">
                         {visibleEdit.length === 0 && (
-                          <p className="rounded-2xl bg-neutral-100 py-6 text-center text-sm text-neutral-400">
+                          <p className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 py-6 text-center text-sm text-neutral-400">
                             Nenhum exercício em {dayFull(editDay)}.
                           </p>
                         )}
 
                         {visibleEdit.map(({ ex, idx }) => (
-                          <div key={idx} className="flex flex-col gap-2 rounded-2xl bg-neutral-100 p-3">
+                          <div key={idx} className="flex flex-col gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
                             <div className="flex gap-2">
                               <input
                                 type="text"
@@ -605,7 +596,7 @@ export default function Workouts() {
                                 onClick={() =>
                                   setEditExercises(editExercises.filter((_, i) => i !== idx))
                                 }
-                                className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 transition hover:bg-red-100"
+                                className="flex w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 transition hover:bg-red-100"
                                 aria-label="Remover exercício"
                               >
                                 <Trash2 size={16} />
@@ -654,7 +645,7 @@ export default function Workouts() {
                         <button
                           type="button"
                           onClick={addEditExercise}
-                          className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-200 py-3 text-sm font-semibold text-neutral-600 transition hover:border-[#7c6cf0] hover:text-[#5b4de0]"
+                          className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-200 dark:border-neutral-800 py-3 text-sm font-semibold text-neutral-600 dark:text-neutral-300 transition hover:border-[#7c6cf0] hover:text-[#5b4de0]"
                         >
                           <Plus size={16} /> Adicionar exercício em {dayFull(editDay || "seg")}
                         </button>
@@ -669,7 +660,7 @@ export default function Workouts() {
                         </button>
                         <button
                           onClick={() => setEditingId(null)}
-                          className="flex items-center gap-2 rounded-2xl bg-neutral-100 px-5 py-2.5 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+                          className="flex items-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 px-5 py-2.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300 transition hover:bg-neutral-200 dark:hover:bg-neutral-700"
                         >
                           <X size={16} /> Cancelar
                         </button>
@@ -679,27 +670,27 @@ export default function Workouts() {
                     <>
                       <div className="mb-4 flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff]">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff] dark:bg-neutral-800">
                             <Dumbbell size={18} className="text-[#5b4de0]" />
                           </span>
                           <div>
                             <h4 className="text-lg font-semibold leading-tight">{w.title}</h4>
                             {w.description && (
-                              <p className="text-sm text-neutral-500">{w.description}</p>
+                              <p className="text-sm text-neutral-500 dark:text-neutral-400">{w.description}</p>
                             )}
                           </div>
                         </div>
                         <div className="flex gap-1.5">
                           <button
                             onClick={() => handleStartEdit(w)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] text-amber-700 transition hover:bg-amber-200"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 transition hover:bg-amber-200"
                             aria-label="Editar ficha"
                           >
                             <Pencil size={15} />
                           </button>
                           <button
                             onClick={() => handleDeleteWorkout(w.id)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 transition hover:bg-red-100"
                             aria-label="Excluir ficha"
                           >
                             <Trash2 size={15} />
@@ -710,15 +701,15 @@ export default function Workouts() {
                       <div className="flex flex-col gap-4">
                         {groups.map((g) => (
                           <div key={g.key || "none"}>
-                            <span className="mb-2 inline-block rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-semibold text-[#5b4de0]">
+                            <span className="mb-2 inline-block rounded-full bg-[#e9e6ff] dark:bg-neutral-800 px-3 py-1 text-xs font-semibold text-[#5b4de0]">
                               {dayFull(g.key)}
                             </span>
                             <div className="flex flex-col gap-2">
                               {g.items.map(({ ex, idx }) => (
-                                <div key={idx} className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm">
+                                <div key={idx} className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 px-4 py-2.5 text-sm">
                                   <div className="flex items-center justify-between gap-3">
                                     <strong className="font-medium">{ex.name}</strong>
-                                    <span className="shrink-0 text-neutral-500">
+                                    <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
                                       {ex.sets}x{ex.reps}
                                       <span className="ml-2 text-xs text-neutral-400">
                                         descanso {ex.rest_time || "-"}

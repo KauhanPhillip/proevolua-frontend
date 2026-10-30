@@ -13,15 +13,20 @@ import {
   Cell,
 } from "recharts";
 import {
+  ArrowLeft,
+  Home,
+  LogOut,
   Search,
   Users,
   Target,
   ClipboardList,
   ChevronRight,
   Info,
-  UserPlus,
-  LogOut,
+  UserRound,
   AlertCircle,
+  UserPlus,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 const BAR_COLORS = ["#7c6cf0", "#ff4d00", "#facc15", "#4ade80", "#38bdf8"];
@@ -31,23 +36,69 @@ export default function Dashboard() {
   const professorId = localStorage.getItem("professor_id") || 5;
 
   const [students, setStudents] = useState([]);
+  const [assessmentsByStudent, setAssessmentsByStudent] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredStudents, setFilteredStudents] = useState([]);
 
+  // Checa se já existe a classe 'dark' ou preferência salva
+  const [isDark, setIsDark] = useState(() => {
+    return (
+      localStorage.getItem("theme") === "dark" ||
+      document.documentElement.classList.contains("dark")
+    );
+  });
+
   useEffect(() => {
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "dark") {
+      document.documentElement.classList.add("dark");
+      setIsDark(true);
+    } else if (savedTheme === "light") {
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
+    } else {
+      // Se não houver nada salvo, garante modo claro por padrão
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
+    }
     loadStudents();
   }, []);
+
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    if (root.classList.contains("dark")) {
+      root.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+      setIsDark(false);
+    } else {
+      root.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+      setIsDark(true);
+    }
+  };
 
   const loadStudents = async () => {
     try {
       const response = await api.get(`/professors/${professorId}/students`);
-      setStudents(response.data || []);
+      const studentsList = response.data || [];
+      setStudents(studentsList);
+
+      studentsList.forEach(async (s) => {
+        try {
+          const res = await api.get(`/students/${s.id}/assessments`);
+          setAssessmentsByStudent((prev) => ({
+            ...prev,
+            [s.id]: res.data || [],
+          }));
+        } catch (err) {
+          console.error(`Erro ao carregar avaliações do aluno ${s.id}:`, err);
+        }
+      });
     } catch (err) {
       console.error("Erro ao carregar alunos no Dashboard:", err);
     }
   };
 
-  // Filtro estrito de alunos ativos
   const activeStudents = useMemo(() => {
     return students.filter((s) => s.is_active !== false && s.is_active !== 0);
   }, [students]);
@@ -78,16 +129,25 @@ export default function Dashboard() {
   const withGoal = activeStudents.filter((s) => s.goal && String(s.goal).trim() !== "").length;
   const goalPercent = activeStudents.length ? Math.round((withGoal / activeStudents.length) * 100) : 0;
 
-  // Alunos ativos que precisam de reavaliação (+25 dias ou sem avaliação)
   const studentsNeedingReview = useMemo(() => {
-    const targetDaysAgo = new Date();
-    targetDaysAgo.setDate(targetDaysAgo.getDate() - 25);
+    const today = new Date();
 
     return activeStudents.filter((s) => {
-      if (!s.last_assessment_date) return true;
-      return new Date(s.last_assessment_date) < targetDaysAgo;
+      const studentAssessments = assessmentsByStudent[s.id];
+      if (!studentAssessments) return false;
+      if (studentAssessments.length === 0) return true;
+
+      const sorted = [...studentAssessments].sort(
+        (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      );
+      const lastAssessmentDate = new Date(sorted[0].created_at);
+
+      const diffInTime = today.getTime() - lastAssessmentDate.getTime();
+      const diffInDays = diffInTime / (1000 * 3600 * 24);
+
+      return diffInDays > 25;
     });
-  }, [activeStudents]);
+  }, [activeStudents, assessmentsByStudent]);
 
   const goalsChart = useMemo(() => {
     const count = {};
@@ -101,7 +161,7 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [activeStudents]);
 
-  const recentStudents = activeStudents.slice(-4).reverse();
+  const recentStudents = activeStudents.slice(-5).reverse();
 
   const initials = (name = "") =>
     name
@@ -112,42 +172,66 @@ export default function Dashboard() {
       .join("");
 
   return (
-    <div className="min-h-screen bg-[#ececec] p-4 md:p-8 font-sans text-neutral-900">
+    <div className="min-h-screen bg-[#ececec] dark:bg-neutral-950 p-4 md:p-8 font-sans text-neutral-900 dark:text-neutral-100 transition-colors">
       <div className="mx-auto max-w-6xl">
-        {/* Cabeçalho */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">ProEvolua</h1>
-            <p className="text-sm text-neutral-500">Painel de controle do professor</p>
+        {/* Barra superior */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2">
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md dark:border dark:border-neutral-800"
+            >
+              <ArrowLeft size={16} /> Voltar
+            </button>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="flex items-center gap-2 rounded-full bg-neutral-900 dark:bg-neutral-100 px-4 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm transition hover:bg-neutral-700"
+            >
+              <Home size={16} /> Início
+            </button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Botão de Alternar Tema */}
             <button
-              onClick={() => navigate("/students")}
-              className="flex items-center gap-2 rounded-2xl bg-[#ff4d00] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#e04400]"
+              onClick={toggleTheme}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white dark:bg-neutral-900 text-neutral-700 dark:text-yellow-400 shadow-sm transition hover:scale-105 dark:border dark:border-neutral-800"
+              title="Alternar modo escuro/claro"
             >
-              <UserPlus size={18} /> Cadastrar aluno
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+
+            <button
+              onClick={() => navigate("/professor/profile")}
+              className="flex items-center gap-2 rounded-full bg-[#7c6cf0] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#6a59e6]"
+            >
+              <UserRound size={16} /> Meu Perfil
             </button>
 
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-50"
+              className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-sm font-medium text-red-600 shadow-sm transition hover:bg-red-50 dark:hover:bg-red-950/30 dark:border dark:border-neutral-800"
             >
-              <LogOut size={18} /> Sair
+              <LogOut size={16} /> Sair
             </button>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold tracking-tight">ProEvolua</h1>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Bem-vindo ao painel do professor!</p>
         </div>
 
         {/* Grade Bento */}
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
           {/* Busca */}
-          <div className="relative z-20 rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+          <div className="relative z-20 rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm md:col-span-2">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-xl font-semibold leading-tight">
                 Buscar aluno
                 <span className="block text-sm font-normal text-neutral-400">por nome ou ID</span>
               </h3>
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-100 text-neutral-400">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-400">
                 <Info size={14} />
               </span>
             </div>
@@ -159,17 +243,17 @@ export default function Dashboard() {
                 placeholder="Digite o nome ou ID do aluno..."
                 value={searchTerm}
                 onChange={handleSearchChange}
-                className="w-full rounded-2xl bg-neutral-100 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]"
+                className="w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0] dark:text-white"
               />
             </div>
 
             {filteredStudents.length > 0 && (
-              <div className="absolute left-6 right-6 top-[130px] max-h-64 overflow-y-auto rounded-2xl bg-white p-2 shadow-xl ring-1 ring-black/5">
+              <div className="absolute left-6 right-6 top-[130px] max-h-64 overflow-y-auto rounded-2xl bg-white dark:bg-neutral-800 p-2 shadow-xl ring-1 ring-black/5">
                 {filteredStudents.map((student) => (
                   <div
                     key={student.id}
                     onClick={() => navigate(`/students/${student.id}/profile`)}
-                    className="flex cursor-pointer items-center justify-between rounded-xl p-3 transition hover:bg-neutral-100"
+                    className="flex cursor-pointer items-center justify-between rounded-xl p-3 transition hover:bg-neutral-100 dark:hover:bg-neutral-700"
                   >
                     <div className="flex items-center gap-3">
                       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e9e6ff] text-sm font-semibold text-[#5b4de0]">
@@ -178,7 +262,7 @@ export default function Dashboard() {
                       <div>
                         <strong className="text-sm">{student.name}</strong>{" "}
                         <span className="text-xs text-neutral-400">({formatId(student.id)})</span>
-                        <p className="m-0 text-xs text-neutral-500">
+                        <p className="m-0 text-xs text-neutral-500 dark:text-neutral-300">
                           {student.goal ? `Objetivo: ${student.goal}` : "Sem objetivo definido"}
                         </p>
                       </div>
@@ -192,8 +276,8 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Total de Alunos Ativos */}
-          <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 p-6 text-white shadow-sm">
+          {/* Total de alunos ativos */}
+          <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 dark:bg-neutral-900 dark:border dark:border-neutral-800 p-6 text-white shadow-sm">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
               <Users size={20} />
             </div>
@@ -202,11 +286,11 @@ export default function Dashboard() {
                 {activeStudents.length}
                 <span className="ml-2 text-lg font-normal text-neutral-400">alunos</span>
               </p>
-              <p className="mt-2 text-sm text-neutral-400">Alunos ativos</p>
+              <p className="mt-2 text-sm text-neutral-400">Ativos cadastrados</p>
             </div>
           </div>
 
-          {/* Alerta de Reavaliações Pendentes (+25 dias) */}
+          {/* Card de Alerta de Reavaliações Pendentes */}
           <div
             onClick={() => navigate("/reviews-pending")}
             className="flex flex-col justify-between rounded-3xl bg-[#7c6cf0] p-6 text-white shadow-sm cursor-pointer transition hover:opacity-95 hover:shadow-md"
@@ -230,8 +314,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Anel: Alunos com Objetivo */}
-          <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+          {/* Anel: alunos com objetivo definido */}
+          <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm md:col-span-2">
             <div className="flex items-center gap-4">
               <div className="relative h-36 w-36 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -247,7 +331,7 @@ export default function Dashboard() {
                       dataKey="value"
                       cornerRadius={20}
                       fill="#ff4d00"
-                      background={{ fill: "#f1f1f1" }}
+                      background={{ fill: isDark ? "#262626" : "#f1f1f1" }}
                     />
                   </RadialBarChart>
                 </ResponsiveContainer>
@@ -257,23 +341,23 @@ export default function Dashboard() {
                 </div>
               </div>
               <div>
-                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7]">
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] dark:bg-neutral-800">
                   <Target size={16} className="text-amber-600" />
                 </div>
                 <h4 className="text-lg font-semibold leading-tight">Metas definidas</h4>
-                <p className="mt-1 text-xs text-neutral-500">
-                  <strong className="text-neutral-900">{withGoal}</strong> de{" "}
-                  <strong className="text-neutral-900">{activeStudents.length}</strong> alunos ativos possuem
-                  meta de treino.
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  <strong className="text-neutral-900 dark:text-white">{withGoal}</strong> de{" "}
+                  <strong className="text-neutral-900 dark:text-white">{activeStudents.length}</strong> alunos ativos já têm
+                  objetivo cadastrado.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Gráfico de Objetivos */}
-          <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+          {/* Barras: alunos por objetivo */}
+          <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm md:col-span-2">
             <h4 className="mb-1 text-lg font-semibold leading-tight">Alunos por objetivo</h4>
-            <p className="mb-2 text-xs text-neutral-400">Distribuição das metas</p>
+            <p className="mb-2 text-xs text-neutral-400">Os 5 objetivos mais comuns</p>
             <div className="h-32">
               {goalsChart.length === 0 ? (
                 <p className="pt-8 text-center text-xs text-neutral-400">Sem dados ainda</p>
@@ -289,7 +373,13 @@ export default function Dashboard() {
                     />
                     <Tooltip
                       cursor={{ fill: "transparent" }}
-                      contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 20px rgba(0,0,0,.12)" }}
+                      contentStyle={{
+                        borderRadius: 12,
+                        border: "none",
+                        boxShadow: "0 4px 20px rgba(0,0,0,.12)",
+                        backgroundColor: isDark ? "#171717" : "#ffffff",
+                        color: isDark ? "#ffffff" : "#000000",
+                      }}
                       formatter={(v) => [`${v} aluno(s)`, ""]}
                     />
                     <Bar dataKey="total" radius={[10, 10, 10, 10]} maxBarSize={32}>
@@ -303,8 +393,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Alunos Recentes */}
-          <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+          {/* Alunos recentes */}
+          <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm md:col-span-2">
             <h4 className="mb-3 text-lg font-semibold leading-tight">Alunos recentes</h4>
             {recentStudents.length === 0 ? (
               <p className="text-xs text-neutral-400">Nenhum aluno ativo cadastrado.</p>
@@ -314,7 +404,7 @@ export default function Dashboard() {
                   <div
                     key={s.id}
                     onClick={() => navigate(`/students/${s.id}/profile`)}
-                    className="flex cursor-pointer items-center justify-between rounded-xl p-2 transition hover:bg-neutral-100"
+                    className="flex cursor-pointer items-center justify-between rounded-xl p-2 transition hover:bg-neutral-100 dark:hover:bg-neutral-800"
                   >
                     <div className="flex items-center gap-3">
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e9e6ff] text-xs font-semibold text-[#5b4de0]">
@@ -332,11 +422,11 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Ações Rápidas */}
-          <div className="flex flex-col justify-between rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+          {/* Ações rápidas */}
+          <div className="flex flex-col justify-between rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm md:col-span-2">
             <div>
               <h4 className="text-lg font-semibold leading-tight">Ações rápidas</h4>
-              <p className="mt-1 text-xs text-neutral-400">Acesso direto às rotinas</p>
+              <p className="mt-1 text-xs text-neutral-400">Acesse o que você mais usa</p>
             </div>
             <div className="mt-4 flex flex-col gap-2.5">
               <button

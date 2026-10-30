@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   Home,
   Mail,
+  Phone,
   Calendar,
   Target,
   Flame,
@@ -28,11 +29,9 @@ import {
   X,
   TrendingUp,
   Download,
-  Power,
 } from "lucide-react";
 import { generateWorkoutPdf, generateAssessmentPdf } from "../utils/pdfReports";
 
-// Baixa um arquivo gerado no navegador
 const downloadFile = (file) => {
   const url = URL.createObjectURL(file);
   const a = document.createElement("a");
@@ -44,8 +43,45 @@ const downloadFile = (file) => {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
 
+// Formata o telefone salvo para o padrão (35) 00000-0000
+const displayPhone = (phoneStr) => {
+  if (!phoneStr) return "Não informado";
+  const numbers = String(phoneStr).replace(/\D/g, "");
+  if (numbers.length === 11) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 7)}-${numbers.substring(7, 11)}`;
+  } else if (numbers.length === 10) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 6)}-${numbers.substring(6, 10)}`;
+  }
+  return phoneStr;
+};
+
+// Calcula a idade com base na data de nascimento
+const calculateAge = (birthDateString) => {
+  if (!birthDateString) return null;
+  const today = new Date();
+  const birthDate = new Date(birthDateString);
+  if (isNaN(birthDate.getTime())) return null;
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : null;
+};
+
+// Formata a data para DD/MM/YYYY
+const formatDateDisplay = (dateString) => {
+  if (!dateString) return "";
+  const parts = dateString.split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateString;
+};
+
 const inputClass =
-  "w-full rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
+  "w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 dark:text-white px-4 py-2.5 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
 
 const metricConfig = {
   weight: { label: "Peso", color: "#7c6cf0", unit: "kg" },
@@ -66,7 +102,6 @@ const DAYS_NAMES = {
   dom: "Domingo",
 };
 
-// Agrupa os exercícios de uma ficha por dia da semana
 const groupByDay = (exs = []) => {
   const groups = DAYS_ORDER.map((k) => ({
     key: k,
@@ -107,7 +142,7 @@ const hasValue = (v) => v !== null && v !== undefined && v !== "";
 function Field({ label, ...props }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-neutral-500">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</label>
       <input type="number" className={inputClass} {...props} />
     </div>
   );
@@ -122,6 +157,7 @@ export default function StudentProfile() {
 
   const [workouts, setWorkouts] = useState([]);
   const [assessments, setAssessments] = useState([]);
+  const [professor, setProfessor] = useState(null);
 
   const [chartMetric, setChartMetric] = useState("weight");
 
@@ -148,7 +184,19 @@ export default function StudentProfile() {
     loadStudentData();
     loadWorkouts();
     loadAssessments();
+    loadProfessor();
   }, [studentId]);
+
+  const loadProfessor = async () => {
+    const professorId = localStorage.getItem("professor_id");
+    if (!professorId) return;
+    try {
+      const res = await api.get(`/professors/${professorId}`);
+      setProfessor(res.data);
+    } catch (err) {
+      console.error("Erro ao carregar dados do professor:", err);
+    }
+  };
 
   const loadStudentData = async () => {
     try {
@@ -174,22 +222,6 @@ export default function StudentProfile() {
       setAssessments(res.data);
     } catch (err) {
       console.error("Erro ao carregar avaliações:", err);
-    }
-  };
-
-  // Função para alternar o status Ativo / Inativo
-  const toggleStatus = async () => {
-    try {
-      const newStatus = student.is_active === false ? true : false;
-      await api.put(`/students/${studentId}`, {
-        ...student,
-        is_active: newStatus,
-      });
-      setStudent({ ...student, is_active: newStatus });
-      alert(newStatus ? "Aluno ativado com sucesso!" : "Aluno desativado com sucesso!");
-    } catch (err) {
-      console.error("Erro ao alterar status:", err);
-      alert("Erro ao alterar o status do aluno.");
     }
   };
 
@@ -283,7 +315,7 @@ export default function StudentProfile() {
     }
 
     try {
-      downloadFile(generateWorkoutPdf(student, workouts));
+      downloadFile(generateWorkoutPdf(student, workouts, professor));
     } catch (err) {
       console.error("Erro ao gerar PDF do treino:", err);
       alert("Erro ao gerar o PDF do treino.");
@@ -297,7 +329,7 @@ export default function StudentProfile() {
     }
 
     try {
-      downloadFile(generateAssessmentPdf(student, assessments));
+      downloadFile(generateAssessmentPdf(student, assessments, professor));
     } catch (err) {
       console.error("Erro ao gerar PDF das medidas:", err);
       alert("Erro ao gerar o PDF das medidas.");
@@ -349,18 +381,20 @@ export default function StudentProfile() {
     const header = (
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e9e6ff]">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e9e6ff] dark:bg-neutral-800">
             <TrendingUp size={18} className="text-[#5b4de0]" />
           </span>
           <h4 className="text-xl font-semibold leading-tight">Painel de evolução</h4>
         </div>
-        <div className="flex flex-wrap gap-1 rounded-3xl bg-neutral-100 p-1">
+        <div className="flex flex-wrap gap-1 rounded-3xl bg-neutral-100 dark:bg-neutral-800 p-1">
           {Object.entries(metricConfig).map(([key, c]) => (
             <button
               key={key}
               onClick={() => setChartMetric(key)}
               className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
-                chartMetric === key ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-900"
+                chartMetric === key
+                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+                  : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
               }`}
             >
               {c.label}
@@ -372,7 +406,7 @@ export default function StudentProfile() {
 
     if (assessments.length < 2 || validData.length < 2) {
       return (
-        <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4">
+        <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
           {header}
           <p className="py-8 text-center text-sm text-neutral-400">
             Cadastre pelo menos <strong>2 avaliações</strong>
@@ -396,27 +430,27 @@ export default function StudentProfile() {
     }));
 
     const diffColor =
-      chartMetric === "weight" ? (diff <= 0 ? "text-green-600" : "text-red-500") : "text-[#5b4de0]";
+      chartMetric === "weight" ? (diff <= 0 ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400") : "text-[#5b4de0]";
 
     return (
-      <div className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4">
+      <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
         {header}
 
         <div className="mb-4 grid grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-neutral-100 p-3 text-center">
-            <span className="block text-xs text-neutral-500">Inicial</span>
+          <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-center">
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">Inicial</span>
             <span className="text-lg font-semibold">
               {initialVal} <span className="text-sm font-normal text-neutral-400">{cfg.unit}</span>
             </span>
           </div>
-          <div className="rounded-2xl bg-neutral-100 p-3 text-center">
-            <span className="block text-xs text-neutral-500">Atual</span>
+          <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-center">
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">Atual</span>
             <span className="text-lg font-semibold" style={{ color: cfg.color }}>
               {latestVal} <span className="text-sm font-normal text-neutral-400">{cfg.unit}</span>
             </span>
           </div>
-          <div className="rounded-2xl bg-neutral-100 p-3 text-center">
-            <span className="block text-xs text-neutral-500">Variação total</span>
+          <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-center">
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">Variação total</span>
             <span className={`text-lg font-semibold ${diffColor}`}>
               {diff > 0 ? `+${diff}` : diff}{" "}
               <span className="text-sm font-normal text-neutral-400">{cfg.unit}</span>
@@ -433,7 +467,7 @@ export default function StudentProfile() {
                   <stop offset="95%" stopColor={cfg.color} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="#eee" strokeDasharray="4 4" />
+              <CartesianGrid vertical={false} stroke="#333" strokeDasharray="4 4" />
               <XAxis
                 dataKey="date"
                 axisLine={false}
@@ -448,7 +482,13 @@ export default function StudentProfile() {
                 tickFormatter={(v) => Math.round(v)}
               />
               <Tooltip
-                contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 20px rgba(0,0,0,.12)" }}
+                contentStyle={{
+                  borderRadius: 12,
+                  border: "none",
+                  boxShadow: "0 4px 20px rgba(0,0,0,.12)",
+                  backgroundColor: "#171717",
+                  color: "#ffffff",
+                }}
                 formatter={(v) => [`${v} ${cfg.unit}`, cfg.label]}
               />
               <Area
@@ -469,7 +509,7 @@ export default function StudentProfile() {
 
   if (!student) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#ececec] font-sans text-neutral-500">
+      <div className="flex min-h-screen items-center justify-center bg-[#ececec] dark:bg-neutral-950 font-sans text-neutral-500 dark:text-neutral-400">
         Carregando dados do aluno...
       </div>
     );
@@ -480,32 +520,32 @@ export default function StudentProfile() {
   const currentWeight = latestAssessment?.weight || null;
   const currentIMC = calculateIMC(currentWeight, currentHeight);
   const imcInfo = getIMCClass(currentIMC);
-  const currentTMB = calculateTMB(currentWeight, currentHeight, student.age);
-  const isStudentActive = student.is_active !== false;
+  const studentAge = calculateAge(student.birth_date);
+  const currentTMB = calculateTMB(currentWeight, currentHeight, studentAge);
 
   return (
-    <div className="min-h-screen bg-[#ececec] p-4 font-sans text-neutral-900 md:p-8">
+    <div className="min-h-screen bg-[#ececec] dark:bg-neutral-950 p-4 font-sans text-neutral-900 dark:text-neutral-100 transition-colors md:p-8">
       <div className="mx-auto max-w-6xl">
         {/* Barra superior */}
         <div className="mb-6 flex gap-2">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md"
+            className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md dark:border dark:border-neutral-800"
           >
             <ArrowLeft size={16} /> Voltar
           </button>
           <button
             onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-700"
+            className="flex items-center gap-2 rounded-full bg-neutral-900 dark:bg-neutral-100 px-4 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm transition hover:bg-neutral-700"
           >
             <Home size={16} /> Início
           </button>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
-          {/* Cabeçalho do aluno com Botão Toggle Ativo/Inativo */}
+          {/* Cabeçalho do aluno */}
           <div
-            className={`rounded-3xl bg-white p-6 shadow-sm ${
+            className={`rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 ${
               latestAssessment ? "md:col-span-2" : "md:col-span-4"
             }`}
           >
@@ -516,44 +556,24 @@ export default function StudentProfile() {
                 </span>
                 <div>
                   <h2 className="text-2xl font-semibold leading-tight tracking-tight">{student.name}</h2>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="inline-block rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold tracking-wide text-[#5b4de0]">
-                      Matrícula: {formatId(student.id)}
-                    </span>
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        isStudentActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
-                      }`}
-                    >
-                      {isStudentActive ? "Ativo" : "Inativo"}
-                    </span>
-                  </div>
+                  <span className="mt-1 inline-block rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1 text-xs font-semibold tracking-wide text-[#5b4de0]">
+                    Matrícula: {formatId(student.id)}
+                  </span>
                 </div>
               </div>
-
-              {/* Botão Toggle Status */}
-              <button
-                onClick={toggleStatus}
-                title={isStudentActive ? "Desativar aluno" : "Ativar aluno"}
-                className={`flex items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-semibold shadow-sm transition ${
-                  isStudentActive
-                    ? "bg-red-50 text-red-600 hover:bg-red-100"
-                    : "bg-green-50 text-green-700 hover:bg-green-100"
-                }`}
-              >
-                <Power size={14} />
-                {isStudentActive ? "Desativar" : "Ativar"}
-              </button>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2 text-sm">
-              <span className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
-                <Calendar size={14} /> {student.age || "-"} anos
+              <span className="flex items-center gap-2 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 text-neutral-600 dark:text-neutral-300">
+                <Calendar size={14} /> {student.birth_date ? `${formatDateDisplay(student.birth_date.substring(0, 10))}${studentAge !== null ? ` (${studentAge} anos)` : ""}` : "Data de nasc. não informada"}
               </span>
-              <span className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
+              <span className="flex items-center gap-2 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 text-neutral-600 dark:text-neutral-300">
                 <Mail size={14} /> {student.email || "Não informado"}
               </span>
-              <span className="flex items-center gap-2 rounded-full bg-[#fdf1c7] px-3 py-1.5 font-medium text-amber-700">
+              <span className="flex items-center gap-2 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 text-neutral-600 dark:text-neutral-300">
+                <Phone size={14} /> {displayPhone(student.phone)}
+              </span>
+              <span className="flex items-center gap-2 rounded-full bg-[#fdf1c7] dark:bg-amber-950/40 px-3 py-1.5 font-medium text-amber-700 dark:text-amber-300">
                 <Target size={14} /> {student.goal || "Objetivo não definido"}
               </span>
             </div>
@@ -570,19 +590,19 @@ export default function StudentProfile() {
             )}
 
             {/* Exportar PDFs */}
-            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#f4f2ff] p-3">
+            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#f4f2ff] dark:bg-neutral-800/60 p-3">
               <span className="flex items-center gap-2 pr-2 text-sm font-semibold text-[#5b4de0]">
                 <Download size={16} /> Exportar PDF
               </span>
               <button
                 onClick={handleExportWorkouts}
-                className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
+                className="flex items-center gap-2 rounded-full bg-neutral-900 dark:bg-neutral-100 px-4 py-2 text-sm font-semibold text-white dark:text-neutral-900 transition hover:bg-neutral-700"
               >
                 <Dumbbell size={15} /> Exportar treino
               </button>
               <button
                 onClick={handleExportAssessments}
-                className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#5b4de0] ring-1 ring-[#d9d4ff] transition hover:bg-[#ebe8ff]"
+                className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-sm font-semibold text-[#5b4de0] ring-1 ring-[#d9d4ff] dark:ring-neutral-700 transition hover:bg-[#ebe8ff] dark:hover:bg-neutral-800"
               >
                 <Ruler size={15} /> Exportar medidas
               </button>
@@ -591,7 +611,7 @@ export default function StudentProfile() {
 
           {/* IMC (card escuro) */}
           {latestAssessment && (
-            <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 p-6 text-white shadow-sm">
+            <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 dark:border dark:border-neutral-800 p-6 text-white shadow-sm">
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
                 <Scale size={20} />
               </div>
@@ -626,14 +646,14 @@ export default function StudentProfile() {
           )}
 
           {/* Abas */}
-          <div className="rounded-3xl bg-white p-2 shadow-sm md:col-span-4">
+          <div className="rounded-3xl bg-white dark:bg-neutral-900 p-2 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 onClick={() => setActiveTab("workouts")}
                 className={`flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
                   activeTab === "workouts"
                     ? "bg-[#7c6cf0] text-white"
-                    : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                    : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                 }`}
               >
                 <Dumbbell size={18} /> Fichas de treino ({workouts.length})
@@ -643,7 +663,7 @@ export default function StudentProfile() {
                 className={`flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
                   activeTab === "assessments"
                     ? "bg-[#7c6cf0] text-white"
-                    : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                    : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                 }`}
               >
                 <ClipboardList size={18} /> Avaliações &amp; medidas ({assessments.length})
@@ -665,19 +685,19 @@ export default function StudentProfile() {
               </div>
 
               {workouts.length === 0 ? (
-                <div className="rounded-3xl bg-white p-8 text-center text-sm text-neutral-400 shadow-sm md:col-span-4">
+                <div className="rounded-3xl bg-white dark:bg-neutral-900 p-8 text-center text-sm text-neutral-400 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
                   Nenhuma ficha de treino cadastrada para este aluno.
                 </div>
               ) : (
                 workouts.map((w) => (
-                  <div key={w.id} className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2">
+                  <div key={w.id} className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-2">
                     <div className="mb-4 flex items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff]">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff] dark:bg-neutral-800">
                         <Dumbbell size={18} className="text-[#5b4de0]" />
                       </span>
                       <div>
                         <h4 className="text-lg font-semibold leading-tight">{w.title}</h4>
-                        {w.description && <p className="text-sm text-neutral-500">{w.description}</p>}
+                        {w.description && <p className="text-sm text-neutral-500 dark:text-neutral-400">{w.description}</p>}
                       </div>
                     </div>
 
@@ -685,7 +705,7 @@ export default function StudentProfile() {
                       {groupByDay(w.exercises || []).map((g) => (
                         <div key={g.key || "none"}>
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="rounded-full bg-[#e9e6ff] px-3 py-1 text-xs font-semibold text-[#5b4de0]">
+                            <span className="rounded-full bg-[#e9e6ff] dark:bg-neutral-800 px-3 py-1 text-xs font-semibold text-[#5b4de0]">
                               {g.key ? DAYS_NAMES[g.key] : "Exercícios"}
                             </span>
                             <span className="text-xs text-neutral-400">
@@ -694,10 +714,10 @@ export default function StudentProfile() {
                           </div>
                           <div className="flex flex-col gap-2">
                             {g.items.map((ex, idx) => (
-                              <div key={idx} className="rounded-2xl bg-neutral-100 px-4 py-2.5 text-sm">
+                              <div key={idx} className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 px-4 py-2.5 text-sm">
                                 <div className="flex items-center justify-between gap-3">
                                   <strong className="font-medium">{ex.name}</strong>
-                                  <span className="shrink-0 text-neutral-500">
+                                  <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
                                     {ex.sets}x{ex.reps}
                                     <span className="ml-2 text-xs text-neutral-400">
                                       descanso {ex.rest_time || "-"}
@@ -724,7 +744,7 @@ export default function StudentProfile() {
             <>
               <form
                 onSubmit={handleAddAssessment}
-                className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4"
+                className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-4"
               >
                 <h3 className="mb-4 text-xl font-semibold leading-tight">
                   Registrar nova avaliação física
@@ -745,7 +765,7 @@ export default function StudentProfile() {
                   <Field label="Pernas (cm)" step="0.1" value={legs} onChange={(e) => setLegs(e.target.value)} />
                 </div>
 
-                <p className="mb-2 mt-5 text-sm font-semibold text-neutral-700">
+                <p className="mb-2 mt-5 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                   Composição corporal (bioimpedância)
                   <span className="ml-2 font-normal text-neutral-400">opcional</span>
                 </p>
@@ -774,7 +794,7 @@ export default function StudentProfile() {
               <h3 className="mt-2 text-xl font-semibold md:col-span-4">Histórico de medidas</h3>
 
               {assessments.length === 0 ? (
-                <div className="rounded-3xl bg-white p-8 text-center text-sm text-neutral-400 shadow-sm md:col-span-4">
+                <div className="rounded-3xl bg-white dark:bg-neutral-900 p-8 text-center text-sm text-neutral-400 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
                   Nenhuma avaliação cadastrada ainda.
                 </div>
               ) : (
@@ -787,7 +807,7 @@ export default function StudentProfile() {
                   return (
                     <div
                       key={a.id || idx}
-                      className={`rounded-3xl bg-white p-6 shadow-sm ${
+                      className={`rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 ${
                         isEditing ? "md:col-span-4" : "md:col-span-2"
                       }`}
                     >
@@ -800,100 +820,130 @@ export default function StudentProfile() {
                             <Field label="% Gordura" step="0.1" value={editBodyFat} onChange={(e) => setEditBodyFat(e.target.value)} />
                           </div>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                            <Field label="Peitoral" step="0.1" value={editChest} onChange={(e) => setEditChest(e.target.value)} />
-                            <Field label="Cintura" step="0.1" value={editWaist} onChange={(e) => setEditWaist(e.target.value)} />
-                            <Field label="Braços" step="0.1" value={editArms} onChange={(e) => setEditArms(e.target.value)} />
-                            <Field label="Pernas" step="0.1" value={editLegs} onChange={(e) => setEditLegs(e.target.value)} />
+                            <Field label="Peitoral (cm)" step="0.1" value={editChest} onChange={(e) => setEditChest(e.target.value)} />
+                            <Field label="Cintura (cm)" step="0.1" value={editWaist} onChange={(e) => setEditWaist(e.target.value)} />
+                            <Field label="Braços (cm)" step="0.1" value={editArms} onChange={(e) => setEditArms(e.target.value)} />
+                            <Field label="Pernas (cm)" step="0.1" value={editLegs} onChange={(e) => setEditLegs(e.target.value)} />
                           </div>
+
+                          <p className="mt-1 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                            Composição corporal (bioimpedância)
+                          </p>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             {EXTRA_FIELDS.map((f) => (
                               <Field
                                 key={f.key}
-                                label={f.label}
+                                label={`${f.label} (${f.unit})`}
                                 step={f.step}
                                 value={editExtra[f.key]}
                                 onChange={(e) => setEditExtra({ ...editExtra, [f.key]: e.target.value })}
                               />
                             ))}
                           </div>
-                          <div className="flex gap-2 mt-2">
+
+                          <div className="mt-1 flex gap-2">
                             <button
                               onClick={() => handleSaveEditAssessment(a.id)}
-                              className="flex items-center gap-1.5 rounded-full bg-green-600 px-4 py-2 text-xs font-semibold text-white"
+                              className="flex items-center gap-2 rounded-2xl bg-[#7c6cf0] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
                             >
-                              <Check size={14} /> Salvar
+                              <Check size={16} /> Salvar
                             </button>
                             <button
                               onClick={() => setEditingAssessmentId(null)}
-                              className="flex items-center gap-1.5 rounded-full bg-neutral-200 px-4 py-2 text-xs font-semibold text-neutral-700"
+                              className="flex items-center gap-2 rounded-2xl bg-neutral-100 dark:bg-neutral-800 px-5 py-2.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300 transition hover:bg-neutral-200 dark:hover:bg-neutral-700"
                             >
-                              <X size={14} /> Cancelar
+                              <X size={16} /> Cancelar
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div>
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-semibold text-neutral-400">
-                              {new Date(a.created_at).toLocaleDateString("pt-BR", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                              })}
-                            </span>
-                            <div className="flex gap-1">
+                        <>
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[#5b4de0]">
+                                {a.created_at
+                                  ? new Date(a.created_at).toLocaleDateString("pt-BR")
+                                  : "Recente"}
+                              </p>
+                              {itemIMC && (
+                                <span
+                                  className="mt-1 inline-block rounded-full px-3 py-1 text-xs font-semibold"
+                                  style={{ backgroundColor: `${itemClass.color}22`, color: itemClass.color }}
+                                >
+                                  IMC {itemIMC} · {itemClass.text}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-1.5">
                               <button
                                 onClick={() => handleStartEditAssessment(a)}
-                                className="p-2 rounded-full hover:bg-neutral-100 text-neutral-600"
-                                title="Editar"
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 transition hover:bg-amber-200"
+                                aria-label="Editar avaliação"
                               >
-                                <Pencil size={14} />
+                                <Pencil size={15} />
                               </button>
                               <button
                                 onClick={() => handleDeleteAssessment(a.id)}
-                                className="p-2 rounded-full hover:bg-red-50 text-red-600"
-                                title="Excluir"
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 transition hover:bg-red-100"
+                                aria-label="Excluir avaliação"
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={15} />
                               </button>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
-                            <div className="bg-neutral-50 p-2 rounded-2xl">
-                              <span className="block text-[10px] text-neutral-400">Peso</span>
+                          <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Peso</span>
                               <strong>{a.weight} kg</strong>
                             </div>
-                            {a.height && (
-                              <div className="bg-neutral-50 p-2 rounded-2xl">
-                                <span className="block text-[10px] text-neutral-400">Altura</span>
-                                <strong>{a.height} m</strong>
-                              </div>
-                            )}
-                            {a.body_fat && (
-                              <div className="bg-neutral-50 p-2 rounded-2xl">
-                                <span className="block text-[10px] text-neutral-400">% Gordura</span>
-                                <strong>{a.body_fat}%</strong>
-                              </div>
-                            )}
-                            {a.waist && (
-                              <div className="bg-neutral-50 p-2 rounded-2xl">
-                                <span className="block text-[10px] text-neutral-400">Cintura</span>
-                                <strong>{a.waist} cm</strong>
-                              </div>
-                            )}
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Altura</span>
+                              <strong>{a.height || "-"} m</strong>
+                            </div>
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Gordura</span>
+                              <strong>{a.body_fat ? `${a.body_fat}%` : "-"}</strong>
+                            </div>
                           </div>
+                          <div className="mt-2 grid grid-cols-4 gap-2 text-sm">
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Peitoral</span>
+                              <strong>{a.chest || "-"}</strong>
+                            </div>
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Cintura</span>
+                              <strong>{a.waist || "-"}</strong>
+                            </div>
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Braços</span>
+                              <strong>{a.arms || "-"}</strong>
+                            </div>
+                            <div className="rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3">
+                              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Pernas</span>
+                              <strong>{a.legs || "-"}</strong>
+                            </div>
+                          </div>
+                          <p className="mt-2 text-right text-xs text-neutral-400">medidas em cm</p>
 
                           {filledExtras.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-1.5 pt-2 border-t border-neutral-100">
-                              {filledExtras.map((f) => (
-                                <span key={f.key} className="bg-neutral-100 px-2.5 py-1 rounded-full text-[11px] text-neutral-600">
-                                  {f.label}: <strong>{a[f.key]} {f.unit}</strong>
-                                </span>
-                              ))}
-                            </div>
+                            <>
+                              <p className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                                Composição corporal
+                              </p>
+                              <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+                                {filledExtras.map((f) => (
+                                  <div key={f.key} className="rounded-2xl bg-[#f4f2ff] dark:bg-neutral-800 p-3">
+                                    <span className="block text-xs text-neutral-500 dark:text-neutral-400">{f.label}</span>
+                                    <strong>
+                                      {a[f.key]} <span className="text-xs font-normal text-neutral-400">{f.unit}</span>
+                                    </strong>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
                           )}
-                        </div>
+                        </>
                       )}
                     </div>
                   );

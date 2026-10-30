@@ -1,633 +1,400 @@
 import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import api from "../services/api";
-import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Home,
-  Users,
-  Target,
   UserPlus,
+  Search,
   User,
-  Mail,
-  Calendar,
-  UserRound,
   Dumbbell,
   Pencil,
   Trash2,
-  Check,
-  X,
-  Clock,
+  Mail,
   Phone,
-  Ruler,
-  Download,
+  Target,
+  Calendar,
+  X,
 } from "lucide-react";
-import { generateWorkoutPdf, generateAssessmentPdf } from "../utils/pdfReports";
 
-const inputClass =
-  "w-full rounded-2xl bg-neutral-100 py-3 pl-11 pr-4 text-base outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0]";
-const iconClass = "absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400";
-const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600";
-
-const DAYS_ORDER = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
-const DAYS_NAMES = {
-  seg: "Segunda-feira",
-  ter: "Terça-feira",
-  qua: "Quarta-feira",
-  qui: "Quinta-feira",
-  sex: "Sexta-feira",
-  sab: "Sábado",
-  dom: "Domingo",
+// Função para formatar o telefone enquanto digita
+const formatPhoneInput = (value) => {
+  const numbers = value.replace(/\D/g, "").substring(0, 11);
+  if (numbers.length <= 2) {
+    return numbers.length ? `(${numbers}` : "";
+  } else if (numbers.length <= 7) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2)}`;
+  } else {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 7)}-${numbers.substring(7, 11)}`;
+  }
 };
 
-// Baixa um arquivo gerado no navegador
-const downloadFile = (file) => {
-  const url = URL.createObjectURL(file);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = file.name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+// Formata o telefone salvo para exibição na lista
+const displayPhone = (phoneStr) => {
+  if (!phoneStr) return "Sem telefone";
+  const numbers = String(phoneStr).replace(/\D/g, "");
+  if (numbers.length === 11) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 7)}-${numbers.substring(7, 11)}`;
+  } else if (numbers.length === 10) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 6)}-${numbers.substring(6, 10)}`;
+  }
+  return phoneStr;
+};
+
+// Calcula a idade com base na data de nascimento
+const calculateAge = (birthDateString) => {
+  if (!birthDateString) return null;
+  const today = new Date();
+  const birthDate = new Date(birthDateString);
+  if (isNaN(birthDate.getTime())) return null;
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : null;
+};
+
+// Formata a data de YYYY-MM-DD para DD/MM/YYYY para exibição
+const formatDateDisplay = (dateString) => {
+  if (!dateString) return "";
+  const parts = dateString.split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateString;
 };
 
 export default function Students() {
   const navigate = useNavigate();
+  const location = useLocation();
   const professorId = localStorage.getItem("professor_id") || 5;
 
   const [students, setStudents] = useState([]);
-  const [studentWorkouts, setStudentWorkouts] = useState({}); // Armazena treinos por ID do aluno
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [editingStudent, setEditingStudent] = useState(null);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [age, setAge] = useState("");
-  const [goal, setGoal] = useState("");
-
-  const [editingId, setEditingId] = useState(null);
-  const [editName, setEditName] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editAge, setEditAge] = useState("");
-  const [editGoal, setEditGoal] = useState("");
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    birth_date: "",
+    goal: "",
+  });
 
   useEffect(() => {
     loadStudents();
-  }, []);
+    if (location.state?.editStudent) {
+      handleStartEdit(location.state.editStudent);
+    }
+  }, [location]);
 
   const loadStudents = async () => {
     try {
-      const response = await api.get(`/professors/${professorId}/students`);
-      const studentsList = response.data;
-      setStudents(studentsList);
-
-      // Buscar os treinos de cada aluno para separar por dia
-      studentsList.forEach((s) => {
-        loadWorkoutsForStudent(s.id);
-      });
+      const res = await api.get(`/professors/${professorId}/students`);
+      setStudents(res.data || []);
     } catch (err) {
       console.error("Erro ao carregar alunos:", err);
-    }
-  };
-
-  const loadWorkoutsForStudent = async (studentId) => {
-    try {
-      const res = await api.get(`/students/${studentId}/workouts`);
-      setStudentWorkouts((prev) => ({
-        ...prev,
-        [studentId]: res.data || [],
-      }));
-    } catch (err) {
-      console.error(`Erro ao carregar treinos do aluno ${studentId}:`, err);
-    }
-  };
-
-  const handleCreateStudent = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post("/students", {
-        name,
-        email: email || null,
-        phone: phone || null,
-        age: age ? parseInt(age) : null,
-        goal: goal || null,
-        professor_id: parseInt(professorId),
-      });
-
-      setName("");
-      setEmail("");
-      setPhone("");
-      setAge("");
-      setGoal("");
-      loadStudents();
-      alert("Aluno cadastrado com sucesso!");
-    } catch (err) {
-      console.error("Erro ao cadastrar aluno:", err);
-      alert("Erro ao cadastrar aluno.");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleStartEdit = (student) => {
-    setEditingId(student.id);
-    setEditName(student.name || "");
-    setEditEmail(student.email || "");
-    setEditPhone(student.phone || "");
-    setEditAge(student.age || "");
-    setEditGoal(student.goal || "");
+    setEditingStudent(student);
+    setFormData({
+      name: student.name || "",
+      email: student.email || "",
+      phone: student.phone ? displayPhone(student.phone) : "",
+      birth_date: student.birth_date ? student.birth_date.substring(0, 10) : "",
+      goal: student.goal || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleSaveEdit = async (studentId) => {
-    try {
-      await api.put(`/students/${studentId}`, {
-        name: editName,
-        email: editEmail || null,
-        phone: editPhone || null,
-        age: editAge ? parseInt(editAge) : null,
-        goal: editGoal || null,
-        professor_id: parseInt(professorId),
-      });
+  const handleCancelEdit = () => {
+    setEditingStudent(null);
+    setFormData({ name: "", email: "", phone: "", birth_date: "", goal: "" });
+  };
 
-      setEditingId(null);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        name: String(formData.name || "").trim(),
+        email: formData.email ? String(formData.email).trim() : null,
+        phone: formData.phone ? String(formData.phone).replace(/\D/g, "") : null,
+        birth_date: formData.birth_date ? formData.birth_date : null,
+        goal: formData.goal ? String(formData.goal).trim() : null,
+        professor_id: Number(professorId),
+      };
+
+      if (editingStudent) {
+        await api.put(`/students/${editingStudent.id}`, payload);
+        alert("Aluno atualizado com sucesso!");
+      } else {
+        await api.post(`/professors/${professorId}/students`, payload);
+        alert("Aluno cadastrado com sucesso!");
+      }
+      handleCancelEdit();
       loadStudents();
-      alert("Aluno atualizado com sucesso!");
     } catch (err) {
-      console.error("Erro ao atualizar aluno:", err);
-      alert("Erro ao atualizar dados do aluno.");
+      console.error("Erro ao salvar aluno:", err.response?.data || err);
+      alert(`Erro ao salvar dados do aluno: ${JSON.stringify(err.response?.data?.detail || "Erro desconhecido")}`);
     }
   };
 
-  const handleDeleteStudent = async (studentId) => {
-    if (!window.confirm("Tem certeza que deseja excluir este aluno?")) return;
-
+  const handleDelete = async (id, name) => {
+    if (!window.confirm(`Tem certeza que deseja excluir o aluno ${name}?`)) return;
     try {
-      await api.delete(`/students/${studentId}`);
-      loadStudents();
+      await api.delete(`/students/${id}`);
+      setStudents(students.filter((s) => s.id !== id));
       alert("Aluno excluído com sucesso!");
     } catch (err) {
       console.error("Erro ao excluir aluno:", err);
-      alert("Erro ao excluir o aluno.");
+      alert("Erro ao excluir aluno.");
     }
   };
 
-  // ---------- Exportar PDFs ----------
-
-  const handleExportWorkouts = (student) => {
-    const workouts = studentWorkouts[student.id] || [];
-    if (workouts.length === 0) {
-      alert("Este aluno ainda não tem ficha de treino cadastrada.");
-      return;
-    }
-
-    try {
-      downloadFile(generateWorkoutPdf(student, workouts));
-    } catch (err) {
-      console.error("Erro ao gerar PDF do treino:", err);
-      alert("Erro ao gerar o PDF do treino.");
-    }
-  };
-
-  const handleExportAssessment = async (student) => {
-    try {
-      const res = await api.get(`/students/${student.id}/assessments`);
-      const assessments = res.data || [];
-
-      if (assessments.length === 0) {
-        alert("Este aluno ainda não tem avaliação física cadastrada.");
-        return;
-      }
-
-      downloadFile(generateAssessmentPdf(student, assessments));
-    } catch (err) {
-      console.error("Erro ao gerar PDF das medidas:", err);
-      alert("Erro ao gerar o PDF das medidas.");
-    }
-  };
+  const filteredStudents = students.filter(
+    (s) =>
+      s.is_active !== false &&
+      s.is_active !== 0 &&
+      (s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(s.id).includes(searchTerm))
+  );
 
   const formatId = (id) => `#${String(id).substring(0, 6).toUpperCase()}`;
 
-  const initials = (n = "") =>
-    n
+  const initials = (name = "") =>
+    name
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
       .map((p) => p[0].toUpperCase())
       .join("");
 
-  const withGoal = students.filter((s) => s.goal && String(s.goal).trim() !== "").length;
-
-  // Organiza os exercícios de uma ficha agrupados por dia da semana
-  const groupExercisesByDay = (workouts) => {
-    const grouped = {};
-    workouts.forEach((w) => {
-      if (w.exercises && Array.isArray(w.exercises)) {
-        w.exercises.forEach((ex) => {
-          const day = ex.day || "indefinido";
-          if (!grouped[day]) grouped[day] = [];
-          grouped[day].push({ ...ex, workoutTitle: w.title });
-        });
-      }
-    });
-    return grouped;
-  };
-
   return (
-    <div className="min-h-screen bg-[#ececec] p-4 font-sans text-neutral-900 md:p-8">
+    <div className="min-h-screen bg-[#ececec] dark:bg-neutral-950 p-4 font-sans text-neutral-900 dark:text-neutral-100 transition-colors md:p-8">
       <div className="mx-auto max-w-6xl">
         {/* Barra superior */}
-        <div className="mb-6 flex gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md"
-          >
-            <ArrowLeft size={16} /> Voltar
-          </button>
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-700"
-          >
-            <Home size={16} /> Início
-          </button>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2">
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 px-4 py-2 text-sm font-medium shadow-sm transition hover:shadow-md dark:border dark:border-neutral-800"
+            >
+              <ArrowLeft size={16} /> Voltar
+            </button>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="flex items-center gap-2 rounded-full bg-neutral-900 dark:bg-neutral-100 px-4 py-2 text-sm font-medium text-white dark:text-neutral-900 shadow-sm transition hover:bg-neutral-700"
+            >
+              <Home size={16} /> Início
+            </button>
+          </div>
         </div>
 
         <div className="mb-6">
-          <h1 className="text-3xl font-semibold tracking-tight">Gestão de alunos</h1>
-          <p className="text-sm text-neutral-500">Cadastre, edite e acompanhe seus alunos e treinos</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Gestão de Alunos</h1>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Cadastre novos alunos e gerencie a lista existente</p>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
-          {/* Formulário de cadastro */}
-          <form
-            onSubmit={handleCreateStudent}
-            className="rounded-3xl bg-white p-6 shadow-sm md:col-span-2 md:row-span-2"
-          >
-            <div className="mb-5 flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e9e6ff]">
-                <UserPlus size={20} className="text-[#5b4de0]" />
-              </span>
-              <h3 className="text-xl font-semibold leading-tight">
-                Cadastrar novo aluno
-                <span className="block text-sm font-normal text-neutral-400">
-                  Só o nome é obrigatório
-                </span>
+        <div className="grid grid-cols-1 gap-6">
+          {/* TOPO: Formulário de Cadastro / Edição */}
+          <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold flex items-center gap-2">
+                {editingStudent ? <Pencil size={20} className="text-amber-600" /> : <UserPlus size={20} className="text-[#ff4d00]" />}
+                {editingStudent ? `Editando Aluno: ${editingStudent.name}` : "Cadastrar Novo Aluno"}
               </h3>
+              {editingStudent && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="flex items-center gap-1 text-xs font-semibold text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                >
+                  <X size={16} /> Cancelar edição
+                </button>
+              )}
             </div>
 
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className={labelClass}>Nome completo</label>
-                <div className="relative">
-                  <User size={18} className={iconClass} />
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Nome completo *</label>
                   <input
                     type="text"
-                    placeholder="Nome completo"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Nome do aluno"
                     required
-                    className={inputClass}
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0] dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">E-mail</label>
+                  <input
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0] dark:text-white"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
-                  <label className={labelClass}>E-mail (opcional)</label>
-                  <div className="relative">
-                    <Mail size={18} className={iconClass} />
-                    <input
-                      type="email"
-                      placeholder="aluno@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Telefone / WhatsApp</label>
+                  <input
+                    type="text"
+                    placeholder="(35) 99999-9999"
+                    maxLength={15}
+                    value={formData.phone}
+                    onChange={(e) => {
+                      const formatted = formatPhoneInput(e.target.value);
+                      setFormData({ ...formData, phone: formatted });
+                    }}
+                    className="w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0] dark:text-white"
+                  />
                 </div>
                 <div>
-                  <label className={labelClass}>Telefone (opcional)</label>
-                  <div className="relative">
-                    <Phone size={18} className={iconClass} />
-                    <input
-                      type="tel"
-                      placeholder="(35) 99999-9999"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Data de Nascimento</label>
+                  <input
+                    type="date"
+                    value={formData.birth_date}
+                    onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
+                    className="w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0] dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">Objetivo</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Hipertrofia / Emagrecimento"
+                    value={formData.goal}
+                    onChange={(e) => setFormData({ ...formData, goal: e.target.value })}
+                    className="w-full rounded-2xl bg-neutral-100 dark:bg-neutral-800 p-3 text-sm outline-none ring-2 ring-transparent transition focus:ring-[#7c6cf0] dark:text-white"
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
-                <div className="sm:col-span-2">
-                  <label className={labelClass}>Idade</label>
-                  <div className="relative">
-                    <Calendar size={18} className={iconClass} />
-                    <input
-                      type="number"
-                      placeholder="Ex: 25"
-                      value={age}
-                      onChange={(e) => setAge(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-                <div className="sm:col-span-3">
-                  <label className={labelClass}>Objetivo</label>
-                  <div className="relative">
-                    <Target size={18} className={iconClass} />
-                    <input
-                      type="text"
-                      placeholder="Ex: Hipertrofia"
-                      value={goal}
-                      onChange={(e) => setGoal(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
+              <div className="flex gap-3 pt-2">
+                {editingStudent && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="rounded-2xl bg-neutral-200 dark:bg-neutral-800 px-6 py-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300 transition hover:bg-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="rounded-2xl bg-[#7c6cf0] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
+                >
+                  {editingStudent ? "Salvar Alterações" : "Cadastrar Aluno"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* ABAIXO: Listagem e Busca de Alunos */}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-xl font-semibold">Alunos Cadastrados ({filteredStudents.length})</h3>
+              <div className="relative w-full sm:w-72">
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por nome ou ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-2xl bg-white dark:bg-neutral-900 py-2.5 pl-10 pr-4 text-sm outline-none shadow-sm dark:border dark:border-neutral-800 dark:text-white"
+                />
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="mt-6 w-full rounded-2xl bg-[#7c6cf0] px-5 py-3.5 text-base font-semibold text-white transition hover:bg-[#6a59e6]"
-            >
-              Cadastrar aluno
-            </button>
-          </form>
-
-          {/* Total de alunos (card escuro) */}
-          <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 p-6 text-white shadow-sm md:col-span-2">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
-              <Users size={20} />
-            </div>
-            <div>
-              <p className="text-6xl font-semibold leading-none">
-                {students.length}
-                <span className="ml-2 text-xl font-normal text-neutral-400">alunos</span>
-              </p>
-              <p className="mt-2 text-sm text-neutral-400">Total cadastrado</p>
-            </div>
-          </div>
-
-          {/* Com objetivo (card laranja) */}
-          <div className="flex flex-col justify-between rounded-3xl bg-[#ff4d00] p-6 text-white shadow-sm md:col-span-2">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20">
-              <Target size={20} />
-            </div>
-            <div>
-              <p className="text-6xl font-semibold leading-none">
-                {withGoal}
-                <span className="ml-2 text-xl font-normal text-white/80">
-                  de {students.length}
-                </span>
-              </p>
-              <p className="mt-2 text-sm text-white/80">Alunos com objetivo definido</p>
-            </div>
-          </div>
-
-          {/* Lista de alunos */}
-          <h3 className="mt-2 text-xl font-semibold md:col-span-4">Alunos cadastrados</h3>
-
-          {students.length === 0 ? (
-            <div className="rounded-3xl bg-white p-8 text-center text-sm text-neutral-400 shadow-sm md:col-span-4">
-              Nenhum aluno cadastrado ainda.
-            </div>
-          ) : (
-            students.map((s) => {
-              const isEditing = editingId === s.id;
-              const workouts = studentWorkouts[s.id] || [];
-              const exercisesByDay = groupExercisesByDay(workouts);
-
-              return (
-                <div key={s.id} className="rounded-3xl bg-white p-6 shadow-sm md:col-span-4">
-                  {isEditing ? (
-                    <div className="flex flex-col gap-4">
-                      <h4 className="text-lg font-semibold">Editando aluno</h4>
-
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {loading ? (
+              <div className="text-center text-neutral-500 py-12">Carregando alunos...</div>
+            ) : filteredStudents.length === 0 ? (
+              <div className="rounded-3xl bg-white dark:bg-neutral-900 p-12 text-center shadow-sm dark:border dark:border-neutral-800 text-neutral-400">
+                Nenhum aluno encontrado.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {filteredStudents.map((student) => {
+                  const studentAge = calculateAge(student.birth_date);
+                  return (
+                    <div
+                      key={student.id}
+                      className="flex flex-col gap-4 rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm transition hover:shadow-md dark:border dark:border-neutral-800 md:flex-row md:items-center md:justify-between"
+                    >
+                      <div className="flex flex-wrap items-center gap-4">
+                        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff] text-lg font-semibold text-[#5b4de0]">
+                          {initials(student.name)}
+                        </span>
                         <div>
-                          <label className={labelClass}>Nome completo</label>
-                          <div className="relative">
-                            <User size={18} className={iconClass} />
-                            <input
-                              type="text"
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              placeholder="Nome completo"
-                              className={inputClass}
-                            />
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-lg font-semibold">{student.name}</h4>
+                            <span className="rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-0.5 text-xs font-semibold text-[#5b4de0]">
+                              {formatId(student.id)}
+                            </span>
                           </div>
-                        </div>
-                        <div>
-                          <label className={labelClass}>E-mail</label>
-                          <div className="relative">
-                            <Mail size={18} className={iconClass} />
-                            <input
-                              type="email"
-                              value={editEmail}
-                              onChange={(e) => setEditEmail(e.target.value)}
-                              placeholder="E-mail"
-                              className={inputClass}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className={labelClass}>Telefone</label>
-                          <div className="relative">
-                            <Phone size={18} className={iconClass} />
-                            <input
-                              type="tel"
-                              value={editPhone}
-                              onChange={(e) => setEditPhone(e.target.value)}
-                              placeholder="(35) 99999-9999"
-                              className={inputClass}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className={labelClass}>Idade</label>
-                          <div className="relative">
-                            <Calendar size={18} className={iconClass} />
-                            <input
-                              type="number"
-                              value={editAge}
-                              onChange={(e) => setEditAge(e.target.value)}
-                              placeholder="Idade"
-                              className={inputClass}
-                            />
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className={labelClass}>Objetivo</label>
-                          <div className="relative">
-                            <Target size={18} className={iconClass} />
-                            <input
-                              type="text"
-                              value={editGoal}
-                              onChange={(e) => setEditGoal(e.target.value)}
-                              placeholder="Objetivo"
-                              className={inputClass}
-                            />
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                            <span className="flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1 text-neutral-600 dark:text-neutral-300">
+                              <Calendar size={12} /> {student.birth_date ? `${formatDateDisplay(student.birth_date.substring(0, 10))}${studentAge !== null ? ` (${studentAge} anos)` : ""}` : "Sem data nasc."}
+                            </span>
+                            <span className="flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1 text-neutral-600 dark:text-neutral-300">
+                              <Mail size={12} /> {student.email || "Sem e-mail"}
+                            </span>
+                            <span className="flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1 text-neutral-600 dark:text-neutral-300">
+                              <Phone size={12} /> {displayPhone(student.phone)}
+                            </span>
+                            <span className="flex items-center gap-1 rounded-full bg-[#fdf1c7] dark:bg-amber-950/40 px-3 py-1 font-medium text-amber-700 dark:text-amber-300">
+                              <Target size={12} /> {student.goal || "Sem objetivo"}
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2 border-t dark:border-neutral-800 pt-4 md:border-0 md:pt-0">
                         <button
-                          onClick={() => handleSaveEdit(s.id)}
-                          className="flex items-center gap-2 rounded-2xl bg-[#7c6cf0] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
+                          onClick={() => navigate(`/students/${student.id}/profile`)}
+                          className="flex items-center gap-1.5 rounded-full bg-[#7c6cf0] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#6a59e6]"
                         >
-                          <Check size={16} /> Salvar alterações
+                          <User size={14} /> Perfil
                         </button>
                         <button
-                          onClick={() => setEditingId(null)}
-                          className="flex items-center gap-2 rounded-2xl bg-neutral-100 px-5 py-2.5 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+                          onClick={() => navigate(`/workouts/${student.id}`)}
+                          className="flex items-center gap-1.5 rounded-full bg-neutral-900 dark:bg-neutral-100 px-4 py-2 text-xs font-semibold text-white dark:text-neutral-900 transition hover:bg-neutral-800"
                         >
-                          <X size={16} /> Cancelar
+                          <Dumbbell size={14} /> Treinos
+                        </button>
+                        <button
+                          onClick={() => handleStartEdit(student)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 hover:bg-amber-100"
+                          title="Editar aluno"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(student.id, student.name)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100"
+                          title="Excluir aluno"
+                        >
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      <div className="flex flex-col justify-between gap-4 border-b border-neutral-100 pb-5 md:flex-row md:items-center">
-                        <div className="flex items-start gap-4">
-                          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e9e6ff] text-lg font-semibold text-[#5b4de0]">
-                            {initials(s.name)}
-                          </span>
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="truncate text-lg font-semibold leading-tight">{s.name}</h4>
-                              <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-semibold text-[#5b4de0]">
-                                {formatId(s.id)}
-                              </span>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                              <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
-                                <Mail size={12} /> {s.email || "Não informado"}
-                              </span>
-                              <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
-                                <Phone size={12} /> {s.phone || "Sem telefone"}
-                              </span>
-                              <span className="flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1.5 text-neutral-600">
-                                <Calendar size={12} /> {s.age || "-"} anos
-                              </span>
-                              <span className="flex items-center gap-1.5 rounded-full bg-[#fdf1c7] px-3 py-1.5 font-medium text-amber-700">
-                                <Target size={12} /> {s.goal || "Sem objetivo"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            onClick={() => navigate(`/students/${s.id}/profile`)}
-                            className="flex items-center gap-2 rounded-full bg-[#7c6cf0] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6a59e6]"
-                          >
-                            <UserRound size={15} /> Perfil
-                          </button>
-                          <button
-                            onClick={() => navigate(`/workouts/${s.id}`)}
-                            className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
-                          >
-                            <Dumbbell size={15} /> Gerenciar treinos
-                          </button>
-                          <button
-                            onClick={() => handleStartEdit(s)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fdf1c7] text-amber-700 transition hover:bg-amber-200"
-                            aria-label="Editar aluno"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteStudent(s.id)}
-                            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
-                            aria-label="Excluir aluno"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Exportar PDFs */}
-                      <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#f4f2ff] p-3">
-                        <span className="flex items-center gap-2 pr-2 text-sm font-semibold text-[#5b4de0]">
-                          <Download size={16} /> Exportar PDF
-                        </span>
-                        <button
-                          onClick={() => handleExportWorkouts(s)}
-                          className="flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
-                        >
-                          <Dumbbell size={15} /> Exportar treino
-                        </button>
-                        <button
-                          onClick={() => handleExportAssessment(s)}
-                          className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#5b4de0] ring-1 ring-[#d9d4ff] transition hover:bg-[#ebe8ff]"
-                        >
-                          <Ruler size={15} /> Exportar medidas
-                        </button>
-                      </div>
-
-                      {/* Seção de Treinos separados por dias da semana */}
-                      <div className="mt-5">
-                        <h5 className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-700">
-                          <Dumbbell size={16} className="text-[#7c6cf0]" /> Fichas de treino por dia
-                        </h5>
-
-                        {workouts.length === 0 ? (
-                          <p className="text-xs italic text-neutral-400">
-                            Nenhum treino cadastrado para este aluno.
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {DAYS_ORDER.map((dayKey) => {
-                              const dayExercises = exercisesByDay[dayKey] || [];
-                              if (dayExercises.length === 0) return null;
-
-                              return (
-                                <div
-                                  key={dayKey}
-                                  className="rounded-2xl border border-neutral-100 bg-neutral-50 p-4"
-                                >
-                                  <div className="mb-2 flex items-center justify-between">
-                                    <span className="rounded-lg bg-[#e9e6ff] px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[#7c6cf0]">
-                                      {DAYS_NAMES[dayKey]}
-                                    </span>
-                                    <span className="text-xs text-neutral-400">
-                                      {dayExercises.length} exercício(s)
-                                    </span>
-                                  </div>
-                                  <div className="mt-2 flex flex-col gap-2">
-                                    {dayExercises.map((ex, idx) => (
-                                      <div
-                                        key={idx}
-                                        className="rounded-xl border border-neutral-100 bg-white p-2.5 shadow-sm"
-                                      >
-                                        <p className="text-xs font-semibold text-neutral-800">{ex.name}</p>
-                                        <div className="mt-1 flex items-center justify-between text-[11px] text-neutral-500">
-                                          <span>
-                                            {ex.sets} séries × {ex.reps}
-                                          </span>
-                                          {ex.rest_time && (
-                                            <span className="flex items-center gap-1 text-neutral-400">
-                                              <Clock size={10} /> {ex.rest_time}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
