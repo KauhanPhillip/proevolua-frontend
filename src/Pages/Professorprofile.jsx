@@ -25,6 +25,30 @@ const inputClass =
 const iconClass = "absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400";
 const labelClass = "mb-1.5 block text-sm font-medium text-neutral-600 dark:text-neutral-300";
 
+const formatPhoneInput = (value = "") => {
+  const digits = String(value).replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  }
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+};
+
+const displayPhone = (phoneStr) => {
+  if (!phoneStr) return "Sem telefone";
+  const numbers = String(phoneStr).replace(/\D/g, "");
+  if (numbers.length === 11) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 7)}-${numbers.substring(7, 11)}`;
+  }
+  if (numbers.length === 10) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 6)}-${numbers.substring(6, 10)}`;
+  }
+  return phoneStr;
+};
+
 const initials = (name = "") => {
   if (!name || typeof name !== "string") return "PR";
   return name
@@ -44,7 +68,6 @@ const fmtDate = (d) => {
   }
 };
 
-// Calcula a idade com base na data de nascimento
 const calculateAge = (birthDateString) => {
   if (!birthDateString) return null;
   const today = new Date();
@@ -59,7 +82,6 @@ const calculateAge = (birthDateString) => {
   return age >= 0 ? age : null;
 };
 
-// Formata a data para DD/MM/YYYY
 const formatDateDisplay = (dateString) => {
   if (!dateString) return "";
   const parts = dateString.split("-");
@@ -99,7 +121,7 @@ export default function Professorprofile() {
       setProfessor(p);
       setFullName(p.full_name || "");
       setBirthDate(p.birth_date ? p.birth_date.substring(0, 10) : "");
-      setPhone(p.phone || "");
+      setPhone(formatPhoneInput(p.phone || ""));
       setCref(p.cref || "");
       setSpecialty(p.specialty || "");
     } catch (err) {
@@ -127,10 +149,11 @@ export default function Professorprofile() {
 
     setSaving(true);
     try {
+      const cleanPhone = phone.replace(/\D/g, "");
       await api.put(`/professors/${professorId}`, {
         full_name: fullName.trim(),
         birth_date: birthDate || null,
-        phone: phone || null,
+        phone: cleanPhone || null,
         cref: cref || null,
         specialty: specialty || null,
       });
@@ -200,7 +223,6 @@ export default function Professorprofile() {
   return (
     <div className="min-h-screen bg-[#ececec] dark:bg-neutral-950 p-4 font-sans text-neutral-900 dark:text-neutral-100 transition-colors md:p-8">
       <div className="mx-auto max-w-6xl">
-        {/* Barra superior */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-2">
             <button
@@ -240,7 +262,6 @@ export default function Professorprofile() {
             </div>
           )}
 
-          {/* Cabeçalho do professor */}
           <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-2">
             <div className="flex items-center gap-4">
               {picture && !imgError ? (
@@ -274,7 +295,7 @@ export default function Professorprofile() {
                 <Mail size={14} /> {professor.email || "Sem e-mail"}
               </span>
               <span className="flex items-center gap-2 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 text-neutral-600 dark:text-neutral-300">
-                <Phone size={14} /> {professor.phone || "Sem telefone"}
+                <Phone size={14} /> {displayPhone(professor.phone)}
               </span>
               <span className="flex items-center gap-2 rounded-full bg-[#fdf1c7] dark:bg-amber-950/40 px-3 py-1.5 font-medium text-amber-700 dark:text-amber-300">
                 <Award size={14} /> {professor.cref ? `CREF ${professor.cref}` : "CREF não informado"}
@@ -287,7 +308,6 @@ export default function Professorprofile() {
             </div>
           </div>
 
-          {/* Alunos (card escuro) */}
           <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 dark:border dark:border-neutral-800 p-6 text-white shadow-sm">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
               <Users size={20} />
@@ -298,7 +318,6 @@ export default function Professorprofile() {
             </div>
           </div>
 
-          {/* Fichas (card laranja) */}
           <div className="flex flex-col justify-between rounded-3xl bg-[#ff4d00] p-6 text-white shadow-sm">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20">
               <Dumbbell size={20} />
@@ -309,7 +328,6 @@ export default function Professorprofile() {
             </div>
           </div>
 
-          {/* Formulário: meus dados */}
           <form
             onSubmit={handleSave}
             className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-2 md:row-span-2"
@@ -356,7 +374,7 @@ export default function Professorprofile() {
                     <input
                       type="text"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
                       placeholder="(35) 99999-9999"
                       className={inputClass}
                     />
@@ -403,7 +421,6 @@ export default function Professorprofile() {
             </button>
           </form>
 
-          {/* Avaliações registradas */}
           <div className="flex flex-col justify-between rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800">
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e9e6ff] dark:bg-neutral-800">
               <ClipboardList size={20} className="text-[#5b4de0]" />
@@ -414,7 +431,6 @@ export default function Professorprofile() {
             </div>
           </div>
 
-          {/* Alunos sem objetivo */}
           <div className="flex flex-col justify-between rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800">
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#fdf1c7] dark:bg-amber-950/40">
               <Target size={20} className="text-amber-600 dark:text-amber-400" />
@@ -425,7 +441,6 @@ export default function Professorprofile() {
             </div>
           </div>
 
-          {/* Precisam de reavaliação */}
           <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-2">
             <div className="mb-4 flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fdf1c7] dark:bg-amber-950/40">
@@ -464,7 +479,6 @@ export default function Professorprofile() {
             )}
           </div>
 
-          {/* Alunos recentes */}
           <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-2">
             <h4 className="mb-4 text-xl font-semibold leading-tight">Alunos recentes</h4>
             {recentStudents.length === 0 ? (
@@ -493,7 +507,6 @@ export default function Professorprofile() {
             )}
           </div>
 
-          {/* Últimas avaliações */}
           <div className="rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 md:col-span-2">
             <h4 className="mb-4 text-xl font-semibold leading-tight">Últimas avaliações</h4>
             {recentAssessments.length === 0 ? (

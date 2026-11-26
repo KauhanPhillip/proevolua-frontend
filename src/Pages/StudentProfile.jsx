@@ -43,7 +43,6 @@ const downloadFile = (file) => {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 };
 
-// Formata o telefone salvo para o padrão (35) 00000-0000
 const displayPhone = (phoneStr) => {
   if (!phoneStr) return "Não informado";
   const numbers = String(phoneStr).replace(/\D/g, "");
@@ -55,7 +54,6 @@ const displayPhone = (phoneStr) => {
   return phoneStr;
 };
 
-// Calcula a idade com base na data de nascimento
 const calculateAge = (birthDateString) => {
   if (!birthDateString) return null;
   const today = new Date();
@@ -70,7 +68,6 @@ const calculateAge = (birthDateString) => {
   return age >= 0 ? age : null;
 };
 
-// Formata a data para DD/MM/YYYY
 const formatDateDisplay = (dateString) => {
   if (!dateString) return "";
   const parts = dateString.split("-");
@@ -153,6 +150,7 @@ export default function StudentProfile() {
   const navigate = useNavigate();
 
   const [student, setStudent] = useState(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [activeTab, setActiveTab] = useState("workouts");
 
   const [workouts, setWorkouts] = useState([]);
@@ -204,6 +202,30 @@ export default function StudentProfile() {
       setStudent(res.data);
     } catch (err) {
       console.error("Erro ao carregar aluno:", err);
+    }
+  };
+
+  const isStudentActive = student
+    ? student.is_active !== false && student.is_active !== 0
+    : true;
+
+  const handleToggleActive = async () => {
+    if (!student || updatingStatus) return;
+
+    const nextActive = !isStudentActive;
+    setUpdatingStatus(true);
+    setStudent((prev) => ({ ...prev, is_active: nextActive }));
+
+    try {
+      await api.patch(`/students/${studentId}/status`, {
+        is_active: nextActive,
+      });
+    } catch (err) {
+      console.error("Erro ao atualizar status do aluno:", err);
+      setStudent((prev) => ({ ...prev, is_active: !nextActive }));
+      alert("Erro ao atualizar o status do aluno.");
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -526,7 +548,6 @@ export default function StudentProfile() {
   return (
     <div className="min-h-screen bg-[#ececec] dark:bg-neutral-950 p-4 font-sans text-neutral-900 dark:text-neutral-100 transition-colors md:p-8">
       <div className="mx-auto max-w-6xl">
-        {/* Barra superior */}
         <div className="mb-6 flex gap-2">
           <button
             onClick={() => navigate(-1)}
@@ -543,7 +564,6 @@ export default function StudentProfile() {
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
-          {/* Cabeçalho do aluno */}
           <div
             className={`rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-sm dark:border dark:border-neutral-800 ${
               latestAssessment ? "md:col-span-2" : "md:col-span-4"
@@ -578,18 +598,50 @@ export default function StudentProfile() {
               </span>
             </div>
 
-            {latestAssessment && (
-              <div className="mt-4 flex flex-wrap gap-2 text-sm">
-                <span className="flex items-center gap-2 rounded-full bg-[#e9e6ff] px-3 py-1.5 font-medium text-[#5b4de0]">
-                  <Scale size={14} /> {currentWeight} kg
-                </span>
-                <span className="flex items-center gap-2 rounded-full bg-[#e9e6ff] px-3 py-1.5 font-medium text-[#5b4de0]">
-                  <Ruler size={14} /> {currentHeight ? `${currentHeight} m` : "Altura não inf."}
-                </span>
-              </div>
-            )}
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+              {latestAssessment && (
+                <>
+                  <span className="flex items-center gap-2 rounded-full bg-[#e9e6ff] px-3 py-1.5 font-medium text-[#5b4de0]">
+                    <Scale size={14} /> {currentWeight} kg
+                  </span>
+                  <span className="flex items-center gap-2 rounded-full bg-[#e9e6ff] px-3 py-1.5 font-medium text-[#5b4de0]">
+                    <Ruler size={14} /> {currentHeight ? `${currentHeight} m` : "Altura não inf."}
+                  </span>
+                </>
+              )}
 
-            {/* Exportar PDFs */}
+              <div className="flex items-center gap-2 rounded-full bg-neutral-100 dark:bg-neutral-800 px-3.5 py-1.5">
+                <span
+                  className={`text-xs font-semibold ${
+                    isStudentActive
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-red-500 dark:text-red-400"
+                  }`}
+                >
+                  {isStudentActive ? "Ativo" : "Inativo"}
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isStudentActive}
+                  disabled={updatingStatus}
+                  onClick={handleToggleActive}
+                  style={{
+                    backgroundColor: isStudentActive ? "#10b981" : "#d4d4d8",
+                  }}
+                  className="relative inline-flex h-6 w-12 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-300 focus:outline-none disabled:opacity-60"
+                  title={isStudentActive ? "Clique para inativar" : "Clique para ativar"}
+                >
+                  <span
+                    style={{
+                      transform: isStudentActive ? "translateX(24px)" : "translateX(0px)",
+                    }}
+                    className="inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-300"
+                  />
+                </button>
+              </div>
+            </div>
+
             <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#f4f2ff] dark:bg-neutral-800/60 p-3">
               <span className="flex items-center gap-2 pr-2 text-sm font-semibold text-[#5b4de0]">
                 <Download size={16} /> Exportar PDF
@@ -609,7 +661,6 @@ export default function StudentProfile() {
             </div>
           </div>
 
-          {/* IMC (card escuro) */}
           {latestAssessment && (
             <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 dark:border dark:border-neutral-800 p-6 text-white shadow-sm">
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
@@ -628,7 +679,6 @@ export default function StudentProfile() {
             </div>
           )}
 
-          {/* TMB (card laranja) */}
           {latestAssessment && (
             <div className="flex flex-col justify-between rounded-3xl bg-[#ff4d00] p-6 text-white shadow-sm">
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20">
@@ -645,7 +695,6 @@ export default function StudentProfile() {
             </div>
           )}
 
-          {/* Abas */}
           <div className="rounded-3xl bg-white dark:bg-neutral-900 p-2 shadow-sm dark:border dark:border-neutral-800 md:col-span-4">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
@@ -666,12 +715,11 @@ export default function StudentProfile() {
                     : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
                 }`}
               >
-                <ClipboardList size={18} /> Avaliações &amp; medidas ({assessments.length})
+                <ClipboardList size={18} /> Avaliações & medidas ({assessments.length})
               </button>
             </div>
           </div>
 
-          {/* ABA DE TREINOS */}
           {activeTab === "workouts" && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 md:col-span-4">
@@ -739,7 +787,6 @@ export default function StudentProfile() {
             </>
           )}
 
-          {/* ABA DE AVALIAÇÕES E MEDIDAS */}
           {activeTab === "assessments" && (
             <>
               <form

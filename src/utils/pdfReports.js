@@ -56,6 +56,18 @@ const initials = (name = "") =>
     .map((p) => p[0].toUpperCase())
     .join("");
 
+const formatPhone = (phoneStr) => {
+  if (!phoneStr) return "";
+  const numbers = String(phoneStr).replace(/\D/g, "");
+  if (numbers.length === 11) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 7)}-${numbers.substring(7, 11)}`;
+  }
+  if (numbers.length === 10) {
+    return `(${numbers.substring(0, 2)}) ${numbers.substring(2, 6)}-${numbers.substring(6, 10)}`;
+  }
+  return String(phoneStr).trim();
+};
+
 const calculateIMC = (w, h) => {
   if (!w || !h || h === 0) return null;
   const heightM = h > 3 ? h / 100 : h;
@@ -144,32 +156,51 @@ const toFile = (doc, filename) => {
 };
 
 // ---------------------------------------------------------------------------
-// Blocos reutilizáveis: cabeçalho, aluno + cards de destaque, rodapé
+// Blocos reutilizáveis: cabeçalho (com dados do professor), aluno + cards, rodapé
 // ---------------------------------------------------------------------------
-function drawHeader(doc, subtitle, tag) {
-  card(doc, M, TOP, W, 26, C.dark, 6);
+function drawHeader(doc, subtitle, tag, professor = null) {
+  card(doc, M, TOP, W, 28, C.dark, 6);
 
+  // Marca ProEvolua e subtítulo
   font(doc, 20, "bold", C.white);
-  doc.text("Pro", M + 8, TOP + 14.5);
+  doc.text("Pro", M + 8, TOP + 12.5);
   const proW = doc.getTextWidth("Pro");
   font(doc, 20, "bold", C.orange);
-  doc.text("Evolua", M + 8 + proW, TOP + 14.5);
-
-  font(doc, 9, "normal", [190, 190, 195]);
-  doc.text(subtitle, M + 8, TOP + 21.5);
+  doc.text("Evolua", M + 8 + proW, TOP + 12.5);
 
   font(doc, 8.5, "normal", [190, 190, 195]);
-  doc.text(`Emitido em ${new Date().toLocaleDateString("pt-BR")}`, M + W - 8, TOP + 11, {
+  doc.text(subtitle, M + 8, TOP + 18.5);
+
+  // Dados do responsável técnico (nome, CREF, especialidade, telefone)
+  const profName = String(professor?.full_name || professor?.name || "").trim();
+  const profCref = String(professor?.cref || "").trim();
+  const profPhone = formatPhone(professor?.phone);
+  const profSpecialty = String(professor?.specialty || "").trim();
+
+  if (profName || profCref || profPhone || profSpecialty) {
+    const parts = [
+      profName || "Professor",
+      profCref ? `CREF ${profCref}` : "",
+      profSpecialty,
+      profPhone,
+    ].filter(Boolean);
+    font(doc, 7.5, "normal", [220, 220, 225]);
+    doc.text(fit(doc, parts.join(" · "), W - 56), M + 8, TOP + 24.5);
+  }
+
+  // Data de emissão e badge da direita
+  font(doc, 8.5, "normal", [190, 190, 195]);
+  doc.text(`Emitido em ${new Date().toLocaleDateString("pt-BR")}`, M + W - 8, TOP + 11.5, {
     align: "right",
   });
 
   font(doc, 7.5, "bold", C.white);
   const tw = doc.getTextWidth(tag) + 8;
   setFill(doc, C.orange);
-  doc.roundedRect(M + W - 8 - tw, TOP + 14.5, tw, 6.5, 3.25, 3.25, "F");
-  doc.text(tag, M + W - 8 - tw / 2, TOP + 19, { align: "center" });
+  doc.roundedRect(M + W - 8 - tw, TOP + 15.5, tw, 6.5, 3.25, 3.25, "F");
+  doc.text(tag, M + W - 8 - tw / 2, TOP + 20, { align: "center" });
 
-  return TOP + 26 + 5;
+  return TOP + 28 + 5;
 }
 
 function statCard(doc, x, y, w, h, stat, bg) {
@@ -321,13 +352,13 @@ function drawDayCards(doc, y, label, items) {
   return y;
 }
 
-export function generateWorkoutPdf(student, workouts) {
+export function generateWorkoutPdf(student, workouts, professor = null) {
   const doc = createDoc();
 
   const allEx = workouts.flatMap((w) => w.exercises || []);
   const daysUsed = new Set(allEx.filter((e) => DAYS_ORDER.includes(e.day)).map((e) => e.day)).size;
 
-  let y = drawHeader(doc, "Ficha de treino", "TREINO");
+  let y = drawHeader(doc, "Ficha de treino", "TREINO", professor);
   y = drawStudentRow(doc, y, student, [
     {
       label: "Exercícios",
@@ -508,7 +539,7 @@ function drawHistory(doc, y, sorted) {
   return y;
 }
 
-export function generateAssessmentPdf(student, assessments) {
+export function generateAssessmentPdf(student, assessments, professor = null) {
   const doc = createDoc();
 
   const sorted = [...assessments].sort(
@@ -523,7 +554,7 @@ export function generateAssessmentPdf(student, assessments) {
 
   const weightDiff = prev ? diffText(last.weight, prev.weight, " kg") : null;
 
-  let y = drawHeader(doc, "Avaliação física", "AVALIAÇÃO");
+  let y = drawHeader(doc, "Avaliação física", "AVALIAÇÃO", professor);
   y = drawStudentRow(doc, y, student, [
     {
       label: "Peso atual",

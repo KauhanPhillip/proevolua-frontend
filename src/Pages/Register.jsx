@@ -56,10 +56,12 @@ export default function Register() {
         birth_date: formData.birth_date || null,
       });
 
-      setSuccess("Cadastro realizado com sucesso! Redirecionando para o login...");
+      setSuccess(
+        "Cadastro enviado! Sua conta aguarda aprovação do administrador antes do primeiro acesso."
+      );
       setTimeout(() => {
         navigate("/");
-      }, 2000);
+      }, 2500);
     } catch (err) {
       console.error(err);
       setError(

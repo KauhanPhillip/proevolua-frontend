@@ -32,7 +32,12 @@ function LoginContent({ googleEnabled }) {
       navigate("/dashboard");
     } catch (err) {
       console.error(err);
-      setError("Email ou senha incorretos.");
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "string" && detail.trim()) {
+        setError(detail);
+      } else {
+        setError("Email ou senha incorretos.");
+      }
     }
   };
 

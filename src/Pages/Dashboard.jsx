@@ -103,6 +103,10 @@ export default function Dashboard() {
     return students.filter((s) => s.is_active !== false && s.is_active !== 0);
   }, [students]);
 
+  const inactiveStudents = useMemo(() => {
+    return students.filter((s) => s.is_active === false || s.is_active === 0);
+  }, [students]);
+
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
@@ -276,7 +280,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Total de alunos ativos */}
+          {/* Total de alunos ativos e inativos */}
           <div className="flex flex-col justify-between rounded-3xl bg-neutral-900 dark:bg-neutral-900 dark:border dark:border-neutral-800 p-6 text-white shadow-sm">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
               <Users size={20} />
@@ -284,9 +288,13 @@ export default function Dashboard() {
             <div>
               <p className="text-5xl font-semibold leading-none">
                 {activeStudents.length}
-                <span className="ml-2 text-lg font-normal text-neutral-400">alunos</span>
+                <span className="ml-2 text-lg font-normal text-neutral-400">ativos</span>
               </p>
-              <p className="mt-2 text-sm text-neutral-400">Ativos cadastrados</p>
+              <p className="mt-2 text-sm text-neutral-400">
+                <strong className="text-red-400">{inactiveStudents.length}</strong>{" "}
+                {inactiveStudents.length === 1 ? "inativo" : "inativos"} ·{" "}
+                <span>{students.length} no total</span>
+              </p>
             </div>
           </div>
 
